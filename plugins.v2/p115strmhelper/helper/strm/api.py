@@ -31,7 +31,13 @@ from ...utils.strm import StrmUrlGetter, StrmGenerater
 from ...utils.path import PathUtils, PathRemoveUtils
 from ...utils.sentry import sentry_manager
 
+from ...core.message import post_message
 from app.log import logger
+from app.schemas import NotificationType
+from app.utils.string import StringUtils
+
+import re
+import threading
 
 
 class ApiSyncStrmHelper:
@@ -240,6 +246,26 @@ class ApiSyncStrmHelper:
                         "sha1": sha1,
                     }
                 )
+                continue
+
+            # 命中黑名单的广告文件直接从 115 删除
+            blacklist_msg, blacklist_status = StrmGenerater.not_blacklist_key(name)
+            if not blacklist_status:
+                delete_blacklisted_pan_file(
+                    self.client,
+                    file_id=file_id,
+                    pickcode=pick_code,
+                    pan_path=pan_path,
+                    source="API_STRM生成",
+                )
+                fail_data.append(
+                    StrmApiResponseFail(
+                        **item.model_dump(),
+                        code=StrmApiStatusCode.NotRmtMediaExt,
+                        reason=blacklist_msg,
+                    )
+                )
+                fail_strm_count += 1
                 continue
 
             if pan_path_obj.suffix.lower() not in self.rmt_mediaext:
@@ -465,6 +491,20 @@ class ApiSyncStrmHelper:
                 )
             )
 
+        # 逐条发送 STRM 入库通知(带 nfo 信息与封面)
+        if success_data:
+            for item in success_data:
+                try:
+                    local_path_obj = Path(item.local_path)
+                    pan_path_obj = Path(item.pan_path)
+                    rel_path = pan_path_obj.relative_to(item.pan_media_path)
+                    video_path = local_path_obj / PathUtils.sanitize_path_parts(
+                        rel_path
+                    )
+                    send_strm_notify(video_path, item.size)
+                except Exception as e:
+                    logger.error(f"【API_STRM生成】发送入库通知失败: {e}")
+
         return (
             StrmApiStatusCode.Success,
             "生成完成",
@@ -616,3 +656,132 @@ class ApiSyncStrmHelper:
                 remove_strm_count=remove_strm_count, data=config_data
             ),
         )
+
+
+def send_strm_notify(video_file_path: Path, size: Optional[int] = None) -> None:
+    """
+    发送单条 STRM 入库通知(等待同目录 nfo 就绪后带完整数据发送)
+
+    刮削有延迟,nfo 可能晚于 STRM 生成,因此先轮询等待 nfo 落盘;
+    nfo 超时未就绪则跳过发送(无 nfo 数据的通知无意义)。等待在后台
+    线程中进行,不阻塞 STRM 生成主流程。
+
+    :param video_file_path: 本地视频文件路径(与 .strm 同目录)
+    :param size: 文件大小(字节)
+    """
+    if not configer.get_config("notify"):
+        return
+
+    def _wait_nfo(max_wait: int = 120, interval: int = 2) -> Optional[str]:
+        waited = 0
+        while waited < max_wait:
+            try:
+                for nfo_file in video_file_path.parent.iterdir():
+                    if nfo_file.suffix.lower() == ".nfo":
+                        return nfo_file.read_text(
+                            encoding="utf-8", errors="ignore"
+                        )
+            except Exception:
+                pass
+            sleep(interval)
+            waited += interval
+        return None
+
+    def _send():
+        try:
+            nfo_content = _wait_nfo()
+            if not nfo_content:
+                logger.info(
+                    f"【STRM入库通知】等待 nfo 超时(刮削延迟),跳过通知: {video_file_path.name}"
+                )
+                return
+            size_str = StringUtils.str_filesize(size) if size else ""
+            title = video_file_path.name
+            text_lines = []
+            image = None
+
+            def _grab(tag):
+                m = re.search(
+                    r"<%s><!\[CDATA\[(.*?)\]\]></%s>" % (tag, tag),
+                    nfo_content,
+                    re.S,
+                )
+                if m:
+                    return m.group(1).strip()
+                m = re.search(r"<%s>(.*?)</%s>" % (tag, tag), nfo_content, re.S)
+                return m.group(1).strip() if m else ""
+
+            num = _grab("num") or video_file_path.stem
+            media_title = _grab("title")
+            actors = re.findall(
+                r"<actor>\s*<name>(.*?)</name>", nfo_content, re.S
+            )
+            tags = re.findall(r"<tag>(.*?)</tag>", nfo_content, re.S)
+            year = _grab("year")
+            cover = _grab("cover")
+            title = f"{num} 已入库"
+            if media_title:
+                text_lines.append(f"📀 {media_title}")
+            text_lines.append("")
+            if actors:
+                text_lines.append(f"🎬 {', '.join(actors[:5])}")
+            if year:
+                text_lines.append(f"📅 {year}")
+            if tags:
+                text_lines.append(f"🏷 {', '.join(tags[:6])}")
+            if size_str:
+                text_lines.append(f"💾 {size_str}")
+            if cover:
+                image = cover
+            if not text_lines:
+                return
+            post_message(
+                mtype=NotificationType.Plugin,
+                title=title,
+                text=f"\n" + "\n".join(text_lines) + "\n",
+                image=image,
+            )
+            logger.info(f"【STRM入库通知】已发送: {video_file_path.name}")
+        except Exception as e:
+            logger.error(f"【STRM入库通知】发送失败: {e}")
+
+    threading.Thread(target=_send, daemon=True).start()
+
+
+def delete_blacklisted_pan_file(
+    client,
+    file_id=None,
+    pickcode=None,
+    pan_path=None,
+    source="STRM生成",
+) -> bool:
+    """
+    删除 115 上命中黑名单的广告文件
+
+    仅在调用方确认命中黑名单时使用;file_id 缺失时尝试用 pickcode 转换,
+    仍缺失则只记日志跳过。
+
+    :param client: P115Client 实例
+    :param file_id: 115 文件 ID(优先)
+    :param pickcode: 115 文件 pickcode(file_id 缺失时用 to_id 转换)
+    :param pan_path: 网盘路径(仅日志)
+    :param source: 调用来源标识
+    :return: 是否删除成功
+    """
+    if not file_id and pickcode:
+        try:
+            file_id = to_id(pickcode)
+        except Exception:
+            file_id = None
+    if not file_id:
+        logger.warning(
+            f"【{source}】黑名单广告文件缺少 file_id,无法删除: {pan_path}"
+        )
+        return False
+    try:
+        client.fs_delete(int(file_id), **configer.get_ios_ua_app(app=False))
+        logger.info(f"【{source}】已删除黑名单广告文件(115): {pan_path}")
+        return True
+    except Exception as e:
+        logger.error(f"【{source}】删除黑名单广告文件失败: {pan_path}, 错误: {e}")
+        return False

@@ -220,6 +220,34 @@ class P115StrmHelper(_PluginBase):
             logger.warning(f"MCP 初始化跳过: {e}")
             self.mcp_manager = None
 
+        self._run_self_heal()
+
+    def _run_self_heal(self) -> None:
+        """
+        后台执行显式配置的自愈脚本，未配置或脚本不存在时跳过
+        """
+        import os
+        import subprocess
+        import threading
+
+        script = os.environ.get("P115STRM_SELF_HEAL_SCRIPT", "").strip()
+        if not script or not os.path.isabs(script) or not os.path.isfile(script):
+            return
+
+        def _heal() -> None:
+            try:
+                subprocess.run(
+                    ["bash", script],
+                    timeout=600,
+                    capture_output=True,
+                    text=True,
+                )
+            except Exception as e:
+                logger.warning(f"本地自愈脚本执行失败(不影响插件): {e}")
+
+        threading.Thread(target=_heal, daemon=True).start()
+        logger.info("本地自愈钩子已触发: %s", script)
+
     @logs_oper("初始化数据库")
     def init_database(self) -> bool:
         """

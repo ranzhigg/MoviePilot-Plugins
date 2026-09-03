@@ -28,6 +28,7 @@ from ...db_manager.oper import FileDbHelper, LifeEventDbHelper
 from ...helper.mediainfo_download import MediaInfoDownloader
 from ...helper.mediasyncdel import MediaSyncDelHelper
 from ...helper.mediaserver import MediaServerRefresh, emby_mediainfo_queue
+from ..strm.api import delete_blacklisted_pan_file, send_strm_notify
 from .transfer_wait import wait_for_transfer_complete
 
 from urllib.error import HTTPError
@@ -655,6 +656,16 @@ class MonitorLife:
                                 original_file_name, "life", item.get("size", None)
                             )
                         )[1]:
+                            # 命中黑名单的广告文件直接从 115 删除
+                            if "黑名单" in str(result[0]):
+                                delete_blacklisted_pan_file(
+                                    self._client,
+                                    file_id=item.get("id") or item.get("file_id"),
+                                    pickcode=item.get("pickcode")
+                                    or item.get("pick_code"),
+                                    pan_path=item.get("path"),
+                                    source="监控生活事件",
+                                )
                             logger.warn(
                                 f"【监控生活事件】{result[0]}，跳过网盘路径: {item['path']}"
                             )
@@ -688,6 +699,8 @@ class MonitorLife:
                             str(new_file_path),
                         )
                         strm_count += 1
+                        if configer.get_config("notify"):
+                            send_strm_notify(file_path, item.get("size"))
                         scrape_metadata = True
                         if configer.get_config("monitor_life_scrape_metadata_enabled"):
                             if configer.get_config(
@@ -724,15 +737,11 @@ class MonitorLife:
                                 life_enqueue_kw["size"] = item["size"]
                             emby_mediainfo_queue.enqueue(**life_enqueue_kw)
                 _databasehelper.upsert_batch(processed)
-            if configer.get_config("notify"):
-                if strm_count > 0 or mediainfo_count > 0:
-                    self._monitor_life_notification_queue["life"]["strm_count"] += (
-                        strm_count
-                    )
-                    self._monitor_life_notification_queue["life"][
-                        "mediainfo_count"
-                    ] += mediainfo_count
-                    self._schedule_notification()
+            if configer.get_config("notify") and mediainfo_count > 0:
+                self._monitor_life_notification_queue["life"][
+                    "mediainfo_count"
+                ] += mediainfo_count
+                self._schedule_notification()
         else:
             file_path_string = file_path.as_posix()
             _databasehelper.upsert_batch(
@@ -817,6 +826,15 @@ class MonitorLife:
                         original_file_name, "life", event.get("file_size", None)
                     )
                 )[1]:
+                    # 命中黑名单的广告文件直接从 115 删除
+                    if "黑名单" in str(result[0]):
+                        delete_blacklisted_pan_file(
+                            self._client,
+                            file_id=event.get("file_id"),
+                            pickcode=event.get("pick_code"),
+                            pan_path=file_path_string,
+                            source="监控生活事件",
+                        )
                     logger.warning(
                         "【监控生活事件】%s，跳过网盘路径: %s",
                         result[0],
@@ -847,8 +865,7 @@ class MonitorLife:
                     "【监控生活事件】生成 STRM 文件成功: %s", str(new_file_path)
                 )
                 if configer.get_config("notify"):
-                    self._monitor_life_notification_queue["life"]["strm_count"] += 1
-                    self._schedule_notification()
+                    send_strm_notify(file_path, event.get("file_size"))
                 scrape_metadata = True
                 if configer.get_config("monitor_life_scrape_metadata_enabled"):
                     if configer.get_config(

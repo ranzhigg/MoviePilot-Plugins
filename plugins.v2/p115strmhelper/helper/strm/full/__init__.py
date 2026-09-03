@@ -40,6 +40,7 @@ from ....utils.sentry import sentry_manager
 from ....utils.strm import StrmUrlGetter, StrmGenerater
 from ....utils.tree import DirectoryTree
 from ....utils.http import check_iter_path_data
+from ..api import delete_blacklisted_pan_file
 from ....utils.base64 import CBase64
 from ....utils.math import MathUtils
 from ....helper.mediaserver import MediaServerRefresh
@@ -599,6 +600,15 @@ class FullSyncStrmHelper:
                     blacklist_automaton=self.sgab,
                 )
             )[1]:
+                # 命中黑名单的广告文件直接从 115 删除
+                if "黑名单" in str(result[0]):
+                    delete_blacklisted_pan_file(
+                        self.client,
+                        file_id=item.get("id") or item.get("file_id"),
+                        pickcode=item.get("pickcode") or item.get("pick_code"),
+                        pan_path=item_path,
+                        source="全量STRM生成",
+                    )
                 self.__base_logger(
                     "warn",
                     "【全量STRM生成】%s，跳过网盘路径: %s",

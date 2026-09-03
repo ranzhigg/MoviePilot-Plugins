@@ -924,9 +924,11 @@ class HDHivePlaywrightClient:
             timeout=30000,
         )
         try:
-            page.wait_for_selector(
-                "input[name='username'], input[name='password']", timeout=15000
-            )
+            # 分别等待两个输入框都渲染完成(React 页面输入框渲染可能不同步,
+            # 旧实现用 OR 语义等待导致 username 未渲染时填充失败,
+            # 提交后报"用户名或邮箱必填")
+            page.wait_for_selector("input[name='username']", timeout=15000)
+            page.wait_for_selector("input[name='password']", timeout=15000)
         except PlaywrightTimeoutError:
             raise HDHiveLoginError(f"等待登录输入框超时，当前 URL: {page.url}")
 
@@ -938,26 +940,44 @@ class HDHivePlaywrightClient:
             "input[placeholder*='email']",
             "input[placeholder*='用户名']",
         ]
+        filled_user = False
         for sel in user_selectors:
             try:
                 if page.query_selector(sel):
                     page.fill(sel, username)
+                    filled_user = True
                     break
             except Exception:
                 continue
+        if not filled_user:
+            raise HDHiveLoginError("登录页未找到用户名输入框，无法填充")
 
         pwd_selectors = [
             "input[name='password']",
             "input[type='password']",
             "input[placeholder*='密码']",
         ]
+        filled_pwd = False
         for sel in pwd_selectors:
             try:
                 if page.query_selector(sel):
                     page.fill(sel, password)
+                    filled_pwd = True
                     break
             except Exception:
                 continue
+        if not filled_pwd:
+            raise HDHiveLoginError("登录页未找到密码输入框，无法填充")
+
+        # 校验填充结果, React 受控组件若 fill 未生效则补一次
+        try:
+            val = page.eval_on_selector(
+                "input[name='username']", "el => el.value"
+            )
+            if not val:
+                page.fill("input[name='username']", username)
+        except Exception:
+            pass
 
         sleep(0.5)
         submit_selectors = [
@@ -1363,7 +1383,13 @@ class HDHivePlaywrightClient:
 
             debug.log("开始查找头像按钮")
             clicked_avatar = False
+            # 2026-08-24 站点前端改版: 头像由 MUI 组件(div.MuiAvatar-root)
+            # 换为 React Aria + 自定义 CSS (span.avatar.avatar--sm) 与
+            # button[aria-label='打开用户菜单'], 旧选择器已失效需保留作回退。
             for avatar_sel, force in (
+                ("button[aria-label='打开用户菜单']", False),
+                ("button:has(span.avatar)", False),
+                ("span.avatar.avatar--sm", True),
                 ("button:has(div.MuiAvatar-root)", False),
                 ("div.MuiAvatar-root", True),
             ):

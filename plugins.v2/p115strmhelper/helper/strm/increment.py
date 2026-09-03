@@ -46,6 +46,7 @@ from ...utils.path import PathRemoveUtils, PathUtils
 from ...utils.sentry import sentry_manager
 from ...utils.strm import StrmGenerater, StrmUrlGetter
 from ...utils.tree import DirectoryTree
+from .api import delete_blacklisted_pan_file, send_strm_notify
 
 
 if sys_platform == "win32":
@@ -649,6 +650,14 @@ class IncrementSyncStrmHelper:
                     pan_path_obj.name, "increment", self.__get_size(pan_path)
                 )
             )[1]:
+                # 命中黑名单的广告文件直接从 115 删除
+                if "黑名单" in str(result[0]):
+                    delete_blacklisted_pan_file(
+                        self.client,
+                        pickcode=self.__get_pickcode_sha1(pan_path)[0],
+                        pan_path=pan_path,
+                        source="增量STRM生成",
+                    )
                 logger.warn(f"【增量STRM生成】{result[0]}，跳过网盘路径: {pan_path}")
                 self.directory_cache.add_to_group(
                     self.directory_cache_group_name, pan_path
@@ -708,6 +717,16 @@ class IncrementSyncStrmHelper:
             self.strm_fail_count += 1
             self.strm_fail_dict[str(new_file_path)] = str(e)
             return
+
+        # 逐条发送 STRM 入库通知(等待 nfo 就绪后带完整数据发送,受插件 notify 开关控制)
+        try:
+            send_strm_notify(
+                new_file_path.with_suffix(pan_path_obj.suffix),
+                self.__get_size(pan_path),
+            )
+        except Exception as e:
+            logger.error(f"【增量STRM生成】发送入库通知失败: {e}")
+
         if self.scrape_metadata_enabled:
             scrape_metadata = True
             if self.scrape_metadata_exclude_paths:
@@ -770,18 +789,31 @@ class IncrementSyncStrmHelper:
 
     def __remove_unless_strm_path(self, remove_path: str) -> None:
         """
-        立即删除单个无效 STRM 文件
+        立即删除单个无效 STRM 文件(兼容目录路径)
         """
         logger.info(f"【增量STRM生成】清理无效 STRM 文件: {remove_path}")
-        Path(remove_path).unlink(missing_ok=True)
+        _p = Path(remove_path)
+        if _p.is_dir():
+            # 增量清理可能命中整个目录(云端已删,本地残留目录), 目录删除受 remove_unless_dir 控制
+            if self.remove_unless_dir:
+                import shutil
+
+                shutil.rmtree(_p, ignore_errors=True)
+            else:
+                logger.info(
+                    f"【增量STRM生成】跳过目录清理(remove_unless_dir 未开启): {remove_path}"
+                )
+            self.remove_unless_strm_count += 1
+            return
+        _p.unlink(missing_ok=True)
         if self.remove_unless_file:
             PathRemoveUtils.clean_related_files(
-                file_path=Path(remove_path),
+                file_path=_p,
                 func_type="【增量STRM生成】",
             )
         if self.remove_unless_dir:
             PathRemoveUtils.remove_parent_dir(
-                file_path=Path(remove_path),
+                file_path=_p,
                 mode="mixed",
                 func_type="【增量STRM生成】",
             )

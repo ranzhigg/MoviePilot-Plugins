@@ -842,11 +842,15 @@ class Api:
         file_name = url["file_name"]
         try:
             file_name.encode("ascii")
-            content_disposition = f'attachment; filename="{file_name}"'
+            content_disposition = f'inline; filename="{file_name}"'
         except UnicodeEncodeError:
             encoded_filename = quote(file_name, safe="")
-            content_disposition = f"attachment; filename*=UTF-8''{encoded_filename}"
+            content_disposition = f"inline; filename*=UTF-8''{encoded_filename}"
 
+        # 302 重定向:Content-Type 必须保持 application/json(与 body 一致),
+        # 不能声明为媒体类型——否则 Infuse 等客户端不跟随 Location,
+        # 直接把 JSON body 当视频解码导致播放失败
+        # Content-Disposition 用 inline(attachment 会让部分播放器按下载处理)
         redirect_url = UrlUtils.encode_url_fully(str(url))
         return Response(
             status_code=status.HTTP_302_FOUND,
