@@ -231,6 +231,13 @@ class P115StrmHelper(_PluginBase):
         import threading
 
         script = os.environ.get("P115STRM_SELF_HEAL_SCRIPT", "").strip()
+        if not script:
+            from dotenv import dotenv_values
+
+            script = str(
+                dotenv_values("/config/app.env").get("P115STRM_SELF_HEAL_SCRIPT")
+                or ""
+            ).strip()
         if not script or not os.path.isabs(script) or not os.path.isfile(script):
             return
 
