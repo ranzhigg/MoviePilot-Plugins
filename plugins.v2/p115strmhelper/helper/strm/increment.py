@@ -782,20 +782,12 @@ class IncrementSyncStrmHelper:
         """
         立即删除单个无效 STRM 文件(兼容目录路径)
         """
-        logger.info(f"【增量STRM生成】清理无效 STRM 文件: {remove_path}")
         _p = Path(remove_path)
+        # 扫描后路径可能变成目录，不能按文件删除或递归清理其内容
         if _p.is_dir():
-            # 增量清理可能命中整个目录(云端已删,本地残留目录), 目录删除受 remove_unless_dir 控制
-            if self.remove_unless_dir:
-                import shutil
-
-                shutil.rmtree(_p, ignore_errors=True)
-            else:
-                logger.info(
-                    f"【增量STRM生成】跳过目录清理(remove_unless_dir 未开启): {remove_path}"
-                )
-            self.remove_unless_strm_count += 1
+            logger.warning(f"【增量STRM生成】跳过目录路径: {remove_path}")
             return
+        logger.info(f"【增量STRM生成】清理无效 STRM 文件: {remove_path}")
         _p.unlink(missing_ok=True)
         if self.remove_unless_file:
             PathRemoveUtils.clean_related_files(
