@@ -45,7 +45,7 @@ jobs:
           cat "$RUNNER_TEMP/upstream-sync-report.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Save report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: upstream-sync-report
           path: ${{ runner.temp }}/upstream-sync-report.md
