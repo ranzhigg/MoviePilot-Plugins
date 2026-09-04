@@ -40,6 +40,8 @@ Telegram 交流群: https://t.me/+1lcscM_EbqhkN2Rl
 
 ## 运维脚本
 
+- [115 广告附件清理](docs/cleanup-115-ads.md)：按指定目录遍历广告文本附件，支持预览、限速删除及逐条报告。
+
 - [可选 jieba 依赖恢复](docs/optional-jieba.md)：检测 Agent影视助手的分词依赖，缺失时安装，支持接入已有恢复脚本。
 
 ## 感谢
