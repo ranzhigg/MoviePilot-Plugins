@@ -20,7 +20,7 @@ class StrmNotify(_PluginBase):
     plugin_name = "STRM逐条通知"
     plugin_desc = "监控指定目录中的新 STRM，等待对应 NFO 后发送逐条媒体通知"
     plugin_icon = "https://raw.githubusercontent.com/ranzhigg/MoviePilot-Plugins/main/icons/StrmNotify.svg"
-    plugin_version = "3.0.1"
+    plugin_version = "3.0.2"
     plugin_author = "ranzhigg"
     author_url = "https://github.com/ranzhigg"
     plugin_config_prefix = "strmnotify_"
@@ -142,8 +142,47 @@ class StrmNotify(_PluginBase):
             "channel": "", "image": True, "year": True, "actors": True, "tags": True, "filename": True}
 
     def get_page(self) -> List[dict]:
-        """无独立详情页"""
-        return []
+        """展示当前配置和最近扫描记录，不额外扫描或发送通知"""
+        with self._lock:
+            enabled = self._enabled
+            roots = list(self._roots)
+            config = dict(self._config)
+            state = self.get_data("state") or {}
+            interval = self._number("interval", 30, 10, 3600)
+            wait = self._number("wait", 120, 10, 86400)
+            batch = self._number("batch", 10, 1, 100)
+        active = enabled and bool(roots)
+        status = "已启用" if active else ("尚未配置监控目录" if enabled else "未启用")
+        known = sum(len((state.get(str(root)) or {}).get("known", [])) for root in roots)
+        pending = sum(len((state.get(str(root)) or {}).get("pending", {})) for root in roots)
+        def line(text):
+            return {"component": "div", "props": {"class": "mb-2", "style": "overflow-wrap: anywhere"}, "text": text}
+        content = [
+            {"component": "VAlert", "props": {"type": "success" if active else "info", "variant": "tonal", "class": "mb-4"},
+             "text": f"{status} · 每 {interval} 秒扫描一次"},
+            {"component": "VRow", "content": [
+                {"component": "VCol", "props": {"cols": 6}, "content": [line(f"已记录 STRM：{known}")]},
+                {"component": "VCol", "props": {"cols": 6}, "content": [line(f"待处理通知：{pending}")]},
+            ]},
+            {"component": "h3", "props": {"class": "mb-3"}, "text": "监控目录"},
+        ]
+        for root in roots:
+            record = state.get(str(root))
+            detail = "等待首次扫描建立基线" if record is None else f"已记录 {len(record.get('known', []))} 个文件 · 待处理 {len(record.get('pending', {}))} 条"
+            content.append({"component": "VCard", "props": {"variant": "outlined", "class": "mb-3"},
+                            "content": [{"component": "VCardText", "content": [line(str(root)), line(detail)]}]})
+        if not roots:
+            content.append(line("请点右下角齿轮，设置监控目录并启用插件"))
+        content.extend([
+            {"component": "h3", "props": {"class": "my-3"}, "text": "通知设置"},
+            line(f"等待 NFO：{wait} 秒 · 每轮最多 {batch} 条"),
+            line(f"通知渠道：{config.get('channel') or '跟随 MP 通知配置'}"),
+            line("显示内容：" + ("、".join(label for key, label in [("image", "封面"), ("year", "年份"),
+                 ("actors", "演员"), ("tags", "标签"), ("filename", "文件名")] if config.get(key, True)) or "仅标题")),
+            {"component": "VAlert", "props": {"type": "info", "variant": "tonal", "class": "mt-4"},
+             "text": "首次扫描只记录存量文件，新增 STRM 与 NFO 就绪后才通知。以上数量来自最近保存的扫描记录，不代表媒体服务器已入库。修改配置请点右下角齿轮，重新打开此页可刷新数据。"},
+        ])
+        return [{"component": "VCardText", "content": content}]
 
     def get_api(self) -> List[dict]:
         """无额外 API"""
