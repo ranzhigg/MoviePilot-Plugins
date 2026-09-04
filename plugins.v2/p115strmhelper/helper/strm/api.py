@@ -31,13 +31,8 @@ from ...utils.strm import StrmUrlGetter, StrmGenerater
 from ...utils.path import PathUtils, PathRemoveUtils
 from ...utils.sentry import sentry_manager
 
-from ...core.message import post_message
 from app.log import logger
-from app.schemas import NotificationType
-from app.utils.string import StringUtils
 
-import re
-import threading
 
 
 class ApiSyncStrmHelper:
@@ -491,20 +486,6 @@ class ApiSyncStrmHelper:
                 )
             )
 
-        # 逐条发送 STRM 入库通知(带 nfo 信息与封面)
-        if success_data:
-            for item in success_data:
-                try:
-                    local_path_obj = Path(item.local_path)
-                    pan_path_obj = Path(item.pan_path)
-                    rel_path = pan_path_obj.relative_to(item.pan_media_path)
-                    video_path = local_path_obj / PathUtils.sanitize_path_parts(
-                        rel_path
-                    )
-                    send_strm_notify(video_path, item.size)
-                except Exception as e:
-                    logger.error(f"【API_STRM生成】发送入库通知失败: {e}")
-
         return (
             StrmApiStatusCode.Success,
             "生成完成",
@@ -656,96 +637,6 @@ class ApiSyncStrmHelper:
                 remove_strm_count=remove_strm_count, data=config_data
             ),
         )
-
-
-def send_strm_notify(video_file_path: Path, size: Optional[int] = None) -> None:
-    """
-    发送单条 STRM 入库通知(等待同目录 nfo 就绪后带完整数据发送)
-
-    刮削有延迟,nfo 可能晚于 STRM 生成,因此先轮询等待 nfo 落盘;
-    nfo 超时未就绪则跳过发送(无 nfo 数据的通知无意义)。等待在后台
-    线程中进行,不阻塞 STRM 生成主流程。
-
-    :param video_file_path: 本地视频文件路径(与 .strm 同目录)
-    :param size: 文件大小(字节)
-    """
-    if not configer.get_config("notify"):
-        return
-
-    def _wait_nfo(max_wait: int = 120, interval: int = 2) -> Optional[str]:
-        waited = 0
-        while waited < max_wait:
-            try:
-                for nfo_file in video_file_path.parent.iterdir():
-                    if nfo_file.suffix.lower() == ".nfo":
-                        return nfo_file.read_text(
-                            encoding="utf-8", errors="ignore"
-                        )
-            except Exception:
-                pass
-            sleep(interval)
-            waited += interval
-        return None
-
-    def _send():
-        try:
-            nfo_content = _wait_nfo()
-            if not nfo_content:
-                logger.info(
-                    f"【STRM入库通知】等待 nfo 超时(刮削延迟),跳过通知: {video_file_path.name}"
-                )
-                return
-            size_str = StringUtils.str_filesize(size) if size else ""
-            title = video_file_path.name
-            text_lines = []
-            image = None
-
-            def _grab(tag):
-                m = re.search(
-                    r"<%s><!\[CDATA\[(.*?)\]\]></%s>" % (tag, tag),
-                    nfo_content,
-                    re.S,
-                )
-                if m:
-                    return m.group(1).strip()
-                m = re.search(r"<%s>(.*?)</%s>" % (tag, tag), nfo_content, re.S)
-                return m.group(1).strip() if m else ""
-
-            num = _grab("num") or video_file_path.stem
-            media_title = _grab("title")
-            actors = re.findall(
-                r"<actor>\s*<name>(.*?)</name>", nfo_content, re.S
-            )
-            tags = re.findall(r"<tag>(.*?)</tag>", nfo_content, re.S)
-            year = _grab("year")
-            cover = _grab("cover")
-            title = f"{num} 已入库"
-            if media_title:
-                text_lines.append(f"📀 {media_title}")
-            text_lines.append("")
-            if actors:
-                text_lines.append(f"🎬 {', '.join(actors[:5])}")
-            if year:
-                text_lines.append(f"📅 {year}")
-            if tags:
-                text_lines.append(f"🏷 {', '.join(tags[:6])}")
-            if size_str:
-                text_lines.append(f"💾 {size_str}")
-            if cover:
-                image = cover
-            if not text_lines:
-                return
-            post_message(
-                mtype=NotificationType.Plugin,
-                title=title,
-                text=f"\n" + "\n".join(text_lines) + "\n",
-                image=image,
-            )
-            logger.info(f"【STRM入库通知】已发送: {video_file_path.name}")
-        except Exception as e:
-            logger.error(f"【STRM入库通知】发送失败: {e}")
-
-    threading.Thread(target=_send, daemon=True).start()
 
 
 def delete_blacklisted_pan_file(

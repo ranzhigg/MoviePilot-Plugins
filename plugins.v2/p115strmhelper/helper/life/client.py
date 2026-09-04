@@ -28,7 +28,7 @@ from ...db_manager.oper import FileDbHelper, LifeEventDbHelper
 from ...helper.mediainfo_download import MediaInfoDownloader
 from ...helper.mediasyncdel import MediaSyncDelHelper
 from ...helper.mediaserver import MediaServerRefresh, emby_mediainfo_queue
-from ..strm.api import delete_blacklisted_pan_file, send_strm_notify
+from ..strm.api import delete_blacklisted_pan_file
 from .transfer_wait import wait_for_transfer_complete
 
 from urllib.error import HTTPError
@@ -699,8 +699,6 @@ class MonitorLife:
                             str(new_file_path),
                         )
                         strm_count += 1
-                        if configer.get_config("notify"):
-                            send_strm_notify(file_path, item.get("size"))
                         scrape_metadata = True
                         if configer.get_config("monitor_life_scrape_metadata_enabled"):
                             if configer.get_config(
@@ -864,8 +862,6 @@ class MonitorLife:
                 logger.info(
                     "【监控生活事件】生成 STRM 文件成功: %s", str(new_file_path)
                 )
-                if configer.get_config("notify"):
-                    send_strm_notify(file_path, event.get("file_size"))
                 scrape_metadata = True
                 if configer.get_config("monitor_life_scrape_metadata_enabled"):
                     if configer.get_config(

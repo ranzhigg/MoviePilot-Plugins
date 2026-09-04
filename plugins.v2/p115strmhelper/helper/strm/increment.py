@@ -46,7 +46,7 @@ from ...utils.path import PathRemoveUtils, PathUtils
 from ...utils.sentry import sentry_manager
 from ...utils.strm import StrmGenerater, StrmUrlGetter
 from ...utils.tree import DirectoryTree
-from .api import delete_blacklisted_pan_file, send_strm_notify
+from .api import delete_blacklisted_pan_file
 
 
 if sys_platform == "win32":
@@ -717,15 +717,6 @@ class IncrementSyncStrmHelper:
             self.strm_fail_count += 1
             self.strm_fail_dict[str(new_file_path)] = str(e)
             return
-
-        # 逐条发送 STRM 入库通知(等待 nfo 就绪后带完整数据发送,受插件 notify 开关控制)
-        try:
-            send_strm_notify(
-                new_file_path.with_suffix(pan_path_obj.suffix),
-                self.__get_size(pan_path),
-            )
-        except Exception as e:
-            logger.error(f"【增量STRM生成】发送入库通知失败: {e}")
 
         if self.scrape_metadata_enabled:
             scrape_metadata = True
