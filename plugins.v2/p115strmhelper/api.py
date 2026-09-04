@@ -19,6 +19,7 @@ from p115client.tool.fs_files import fs_files_iter
 from fastapi import Body, Request, Response, Depends, status, Query
 from fastapi.responses import JSONResponse
 
+from .helper.ad_cleanup import ad_cleanup
 from .service import servicer
 from .core.config import configer
 from .core.p115_client import create_client
@@ -1242,6 +1243,27 @@ class Api:
         except Exception as e:
             logger.error(f"【分享STRM清理】取消批次失败: {e}", exc_info=True)
             return ApiResponse(code=1, msg=str(e))
+
+    @staticmethod
+    def ad_cleanup_status_api() -> ApiResponse:
+        return ApiResponse(data=ad_cleanup.status())
+
+    @staticmethod
+    def ad_cleanup_start_api(delete: bool = Body(default=False, embed=True)) -> ApiResponse:
+        try:
+            if not configer.get_config("enabled") or not servicer.client:
+                return ApiResponse(code=1, msg="请先启用插件并配置登录")
+            ad_cleanup.start(servicer.client, configer.ad_cleanup_root,
+                             configer.ad_cleanup_keywords, delete,
+                             configer.get_ios_ua_app(app=False))
+            return ApiResponse(msg="广告附件清理已启动" if delete else "广告附件预览已启动")
+        except ValueError as exc:
+            return ApiResponse(code=1, msg=str(exc))
+
+    @staticmethod
+    def ad_cleanup_stop_api() -> ApiResponse:
+        ad_cleanup.stop()
+        return ApiResponse(msg="已请求停止清理")
 
     @staticmethod
     def share_strm_cleanup_scan_api() -> ApiResponse:

@@ -809,6 +809,11 @@ class ConfigManager(BaseModel):
         default=None,
         description="STRM 文件名扩展名特定模板，格式：ext1,ext2 => template",
     )
+    ad_cleanup_root: str = Field(default="", description="广告附件清理目录")
+    ad_cleanup_keywords: List[str] = Field(
+        default_factory=lambda: ["直播", "收藏不迷路", "最新位址", "最新地址", "聚合全网", "社区最新", "广告"],
+        description="广告附件关键词，统一空白和常见繁简字后匹配",
+    )
     strm_generate_blacklist: Optional[List] = Field(
         default=None, description="STRM 文件生成黑名单"
     )

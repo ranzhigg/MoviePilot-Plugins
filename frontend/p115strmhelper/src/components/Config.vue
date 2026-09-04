@@ -457,6 +457,8 @@ const config = reactive({
   strm_filename_template_enabled: false,
   strm_filename_template: '',
   strm_filename_template_custom: '',
+  ad_cleanup_root: '',
+  ad_cleanup_keywords: ['直播', '收藏不迷路', '最新位址', '最新地址', '聚合全网', '社区最新', '广告'],
   strm_generate_blacklist: [],
   mediainfo_download_whitelist: [],
   mediainfo_download_blacklist: [],
@@ -942,6 +944,30 @@ const triggerFullSync = async () => {
     syncLoading.value = false;
   }
 };
+
+const adCleanupBusy = ref(false);
+const adCleanupStatus = ref({});
+const adCleanupAction = async (action) => {
+  adCleanupBusy.value = true;
+  try {
+    if (action !== 'status') {
+      const result = await props.api.post(`plugin/${PLUGIN_ID}/ad_cleanup/${action === 'stop' ? 'stop' : 'start'}`,
+        action === 'stop' ? {} : { delete: action === 'delete' });
+      if (result?.code !== 0) throw new Error(result?.msg || '操作失败');
+    }
+    const result = await props.api.get(`plugin/${PLUGIN_ID}/ad_cleanup/status`);
+    if (result?.code !== 0) throw new Error(result?.msg || '读取状态失败');
+    adCleanupStatus.value = result.data || {};
+  } catch (err) {
+    message.text = err.message || '广告附件清理操作失败';
+    message.type = 'error';
+  } finally {
+    adCleanupBusy.value = false;
+  }
+};
+provide('adCleanupBusy', adCleanupBusy);
+provide('adCleanupStatus', adCleanupStatus);
+provide('adCleanupAction', adCleanupAction);
 
 // 清理文件路径ID缓存
 const clearIdPathCache = async () => {

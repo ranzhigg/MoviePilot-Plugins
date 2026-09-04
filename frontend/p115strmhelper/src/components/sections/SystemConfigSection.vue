@@ -496,6 +496,27 @@
 
           <v-divider class="my-6"></v-divider>
 
+          <v-card variant="outlined" class="pa-4 my-4">
+            <v-card-title>广告附件清理</v-card-title>
+            <v-text-field v-model="config.ad_cleanup_root" label="115 清理目录" placeholder="/待整理"
+              hint="请先保存配置；遍历此目录的全部子目录，不允许网盘根目录" persistent-hint />
+            <v-combobox v-model="config.ad_cleanup_keywords" label="广告附件关键词" multiple chips closable-chips
+              hint="按回车添加关键词，忽略空白和常见繁简差异；仅删除 TXT、HTML、HTM、URL，不删除影片或字幕" persistent-hint />
+            <div class="d-flex flex-wrap ga-2 my-3">
+              <v-btn :disabled="adCleanupBusy || adCleanupStatus.running" @click="adCleanupAction('preview')">预览全目录</v-btn>
+              <v-btn color="warning" :disabled="adCleanupBusy || adCleanupStatus.running" @click="adCleanupAction('delete')">清理全目录</v-btn>
+              <v-btn :disabled="adCleanupBusy || !adCleanupStatus.running" @click="adCleanupAction('stop')">停止</v-btn>
+              <v-btn :loading="adCleanupBusy" @click="adCleanupAction('status')">刷新状态</v-btn>
+            </div>
+            <div class="text-caption">{{ adCleanupStatus.message || '点击刷新状态查看任务进度' }}</div>
+            <div v-if="adCleanupStatus.root" class="text-caption">
+              {{ adCleanupStatus.root }} · {{ adCleanupStatus.running ? '运行中' : '已结束' }} ·
+              目录 {{ adCleanupStatus.directories }} / 文件 {{ adCleanupStatus.files }} /
+              命中 {{ adCleanupStatus.matched }} / 删除 {{ adCleanupStatus.deleted }} / 失败 {{ adCleanupStatus.failed }}
+            </div>
+            <div class="text-caption mt-2">请求间隔至少 3 秒；失败后停止，风控时请冷却后重试。命中及删除明细见插件日志。</div>
+          </v-card>
+
           <v-row class="mt-4">
             <v-col cols="12">
               <v-combobox v-model="config.strm_generate_blacklist" label="STRM文件关键词过滤黑名单"
@@ -640,6 +661,9 @@ const sidebarNavKeyItems = [
 ];
 
 const config = inject('config');
+const adCleanupBusy = inject('adCleanupBusy');
+const adCleanupStatus = inject('adCleanupStatus');
+const adCleanupAction = inject('adCleanupAction');
 const isTransferModuleEnhancementLocked = inject('isTransferModuleEnhancementLocked');
 const clearIdPathCacheLoading = inject('clearIdPathCacheLoading');
 const clearIncrementSkipCacheLoading = inject('clearIncrementSkipCacheLoading');

@@ -27,6 +27,7 @@ jobs:
         run: |
           python -m compileall -q plugins.v2 plugins.v3
           python -m unittest discover -s plugins.v2/p115strmhelper/tests -p test_increment_cleanup.py
+          python -m unittest discover -s plugins.v2/p115strmhelper/tests -p test_ad_cleanup.py
           python -m unittest discover -s plugins.v3/strmnotify/tests -p test_engine.py
           python -c 'import json; [json.load(open(p)) for p in ["package.v2.json", "package.v3.json"]]'
       - name: Push verified merge

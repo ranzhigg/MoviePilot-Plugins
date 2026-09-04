@@ -347,6 +347,12 @@ class P115StrmHelper(_PluginBase):
         获取 API 接口
         """
         apis = [
+            {"path": "/ad_cleanup/status", "endpoint": self.api.ad_cleanup_status_api,
+             "methods": ["GET"], "summary": "广告附件清理状态"},
+            {"path": "/ad_cleanup/start", "endpoint": self.api.ad_cleanup_start_api,
+             "methods": ["POST"], "summary": "预览或清理广告附件"},
+            {"path": "/ad_cleanup/stop", "endpoint": self.api.ad_cleanup_stop_api,
+             "methods": ["POST"], "summary": "停止广告附件清理"},
             {
                 "path": "/redirect_url",
                 "endpoint": self.api.redirect_url_get,

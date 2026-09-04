@@ -14,6 +14,7 @@ from ..core.p115_client import create_client
 from ..core.i18n import i18n
 from ..core.message import post_message
 from ..core.p115 import get_pid_by_path
+from ..helper.ad_cleanup import ad_cleanup
 from ..helper.clean import Cleaner
 from ..helper.life import MonitorLife
 from ..helper.mediainfo_download import MediaInfoDownloader
@@ -793,6 +794,7 @@ class ServiceHelper:
         """
         停止所有服务
         """
+        ad_cleanup.stop()
         try:
             if self.service_observer:
                 for ob in self.service_observer:

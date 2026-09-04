@@ -3,7 +3,7 @@ from time import sleep
 from typing import Tuple, List, Optional, Dict
 from uuid import uuid4
 
-from p115client import P115Client
+from p115client import P115Client, check_response
 from p115client.tool import iter_files_with_path_skim
 from p115pickcode import to_id
 
@@ -670,7 +670,7 @@ def delete_blacklisted_pan_file(
         )
         return False
     try:
-        client.fs_delete(int(file_id), **configer.get_ios_ua_app(app=False))
+        check_response(client.fs_delete(int(file_id), **configer.get_ios_ua_app(app=False)))
         logger.info(f"【{source}】已删除黑名单广告文件(115): {pan_path}")
         return True
     except Exception as e:
