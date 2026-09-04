@@ -1,0 +1,66 @@
+name: Fork upstream sync
+on:
+  schedule:
+    - cron: '0 15 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: fork-upstream-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: github.repository == 'ranzhigg/MoviePilot-Plugins'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Merge upstream conservatively
+        id: merge
+        run: bash .github/scripts/sync-upstream.sh
+      - name: Verify custom plugins
+        if: steps.merge.outputs.changed == 'true'
+        run: |
+          python -m compileall -q plugins.v2 plugins.v3
+          python -m unittest discover -s plugins.v2/p115strmhelper/tests -p test_increment_cleanup.py
+          python -m unittest discover -s plugins.v3/strmnotify/tests -p test_engine.py
+          python -c 'import json; [json.load(open(p)) for p in ["package.v2.json", "package.v3.json"]]'
+      - name: Push verified merge
+        if: steps.merge.outputs.changed == 'true'
+        run: |
+          git push origin HEAD:main
+          echo '验证通过，已推送；没有更新本地 MP，也没有自动发布插件安装包。' >> "$RUNNER_TEMP/upstream-sync-report.md"
+      - name: Record failure
+        if: failure()
+        run: |
+          echo '同步失败：请查看失败步骤。主分支不会收到未通过验证的合并。' >> "$RUNNER_TEMP/upstream-sync-report.md"
+      - name: Publish run summary
+        if: always()
+        run: |
+          test -f "$RUNNER_TEMP/upstream-sync-report.md" || echo '工作流未完成初始化，请查看日志。' > "$RUNNER_TEMP/upstream-sync-report.md"
+          cat "$RUNNER_TEMP/upstream-sync-report.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-sync-report
+          path: ${{ runner.temp }}/upstream-sync-report.md
+          retention-days: 30
+      - name: Report failure as issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf '\n运行日志：%s\n' "$RUN_URL" >> "$RUNNER_TEMP/upstream-sync-report.md"
+          issue=$(gh issue list --state open --search '"上游同步失败" in:title' --json number --jq '.[0].number // empty')
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body-file "$RUNNER_TEMP/upstream-sync-report.md"
+          else
+            gh issue create --title '上游同步失败：需要检查' --body-file "$RUNNER_TEMP/upstream-sync-report.md"
+          fi
