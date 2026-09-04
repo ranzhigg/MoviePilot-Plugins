@@ -15,7 +15,7 @@ with patch.object(module._PluginBase, "__init__", return_value=None):
  plugin=module.StrmNotify()
 storage={}
 plugin.get_data=lambda key:json.loads(json.dumps(storage.get(key)))
-plugin.save_data=lambda key,value:storage.update({key:json.loads(json.dumps(value))})
+plugin.save_data=Mock(side_effect=lambda key,value:storage.update({key:json.loads(json.dumps(value))}))
 plugin.post_message=Mock()
 with TemporaryDirectory() as directory:
  root=Path(directory)
@@ -24,6 +24,9 @@ with TemporaryDirectory() as directory:
  assert plugin.get_state() and len(plugin.get_service())==1
  plugin.get_form()
  plugin.poll();assert plugin.post_message.call_count==0
+ assert plugin.save_data.call_count==1
+ plugin.save_data.reset_mock()
+ plugin.poll();assert plugin.save_data.call_count==0
  for name in ['one','two']:
   (root/f'{name}.strm').touch()
   p=root/f'{name}.nfo';p.write_text(f'<movie><title>{name}</title></movie>');os.utime(p,(0,0))
@@ -31,5 +34,24 @@ with TemporaryDirectory() as directory:
  plugin.poll();assert plugin.post_message.call_count==2
  plugin.init_plugin({'enabled':True,'paths':str(root)})
  plugin.poll();assert plugin.post_message.call_count==2
- plugin.stop_service();(root/'three.strm').touch();plugin.poll();assert plugin.post_message.call_count==2
-print('PASS: real MP plugin load/form/service; baseline; batch; persisted dedup; disable; mocked delivery only')
+ plugin.save_data.reset_mock()
+ plugin.poll();assert plugin.save_data.call_count==0
+ waiting=root/'waiting.strm';waiting.touch()
+ plugin.poll();assert plugin.save_data.call_count==1
+ plugin.save_data.reset_mock()
+ plugin.poll();assert plugin.save_data.call_count==0
+ with patch.object(module, 'time', return_value=module.time()+121):
+  plugin.poll()
+ assert plugin.save_data.call_count==1
+ assert not storage['state'][str(root)]['pending']
+ retry=root/'retry.strm';retry.touch()
+ retry_nfo=retry.with_suffix('.nfo');retry_nfo.write_text('<movie><title>retry</title></movie>');os.utime(retry_nfo,(0,0))
+ plugin.post_message.side_effect=RuntimeError('simulated failure')
+ plugin.poll()
+ assert str(retry) in storage['state'][str(root)]['pending']
+ plugin.save_data.reset_mock();plugin.poll();assert plugin.save_data.call_count==0
+ plugin.post_message.side_effect=None
+ plugin.poll();assert not storage['state'][str(root)]['pending']
+ delivered=plugin.post_message.call_count
+ plugin.stop_service();(root/'three.strm').touch();plugin.poll();assert plugin.post_message.call_count==delivered
+print('PASS: real MP plugin load/form/service; baseline; batch; persisted dedup; disable; unchanged scans write zero times; waiting, timeout and retry persistence; mocked delivery only')

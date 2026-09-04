@@ -20,7 +20,7 @@ class StrmNotify(_PluginBase):
     plugin_name = "STRM逐条通知"
     plugin_desc = "监控指定目录中的新 STRM，等待对应 NFO 后发送逐条媒体通知"
     plugin_icon = "https://raw.githubusercontent.com/ranzhigg/MoviePilot-Plugins/main/icons/StrmNotify.svg"
-    plugin_version = "3.0.0"
+    plugin_version = "3.0.1"
     plugin_author = "ranzhigg"
     author_url = "https://github.com/ranzhigg"
     plugin_config_prefix = "strmnotify_"
@@ -82,8 +82,11 @@ class StrmNotify(_PluginBase):
                 except OSError:
                     logger.warning("STRM逐条通知：目录不可用，本轮保留原记录")
                     continue
-                state[key] = reconcile(state.get(key), files, now)
-                self.save_data("state", state)
+                updated = reconcile(state.get(key), files, now)
+                if updated != state.get(key):
+                    state[key] = updated
+                    self.save_data("state", state)
+                dirty = False
                 pending = state[key]["pending"]
                 for name, started in list(pending.items()):
                     try:
@@ -91,6 +94,7 @@ class StrmNotify(_PluginBase):
                         if info is None:
                             if now - started >= wait:
                                 del pending[name]
+                                dirty = True
                                 logger.info("STRM逐条通知：等待有效 NFO 超时，跳过一条通知")
                             continue
                         if budget <= 0:
@@ -110,9 +114,11 @@ class StrmNotify(_PluginBase):
                         del pending[name]
                         budget -= 1
                         self.save_data("state", state)
+                        dirty = False
                     except Exception as error:
                         logger.warning(f"STRM逐条通知：处理失败，将重试（{type(error).__name__}）")
-                self.save_data("state", state)
+                if dirty:
+                    self.save_data("state", state)
         finally:
             self._lock.release()
 
