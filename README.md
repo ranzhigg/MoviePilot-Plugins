@@ -28,6 +28,8 @@ Telegram 交流群: https://t.me/+1lcscM_EbqhkN2Rl
 
 #### 媒体管理类
 
+- [Agent影视助手](plugins.v2/agentresourceofficer)：飞书入口、资源搜索与转存助手；本 fork 优先使用 MP 官方分词接口，详见[修改说明](plugins.v2/agentresourceofficer/FORK_CHANGES.md)。
+
 - [STRM逐条通知 V3](https://github.com/ranzhigg/MoviePilot-Plugins/tree/main/plugins.v3/strmnotify)：监控新增 STRM，等待 NFO 就绪后逐条发送媒体通知，支持启用开关、监控目录、扫描间隔、通知渠道及展示字段设置，首次扫描不补发历史文件。
 - [神医媒体文件同步删除 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/samediasyncdel) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/samediasyncdel)：通过神医插件通知同步删除历史记录、源文件和下载任务。
 - [ffprobe命名补充 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/ffprobenamingsupplement) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/ffprobenamingsupplement)：整理重命名时调用 `ffprobe`，统一补全视频及关联字幕、音轨的 `videoFormat`、`videoCodec`、`videoBit`、`audioCodec`、`fps`、`effect`，支持 STRM
