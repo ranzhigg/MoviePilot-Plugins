@@ -197,5 +197,19 @@
         "history": {
             "v3.0.0": "适配 MoviePilot V3 SDK、数据库与统一媒体身份契约"
         }
+    },
+    "StrmNotify": {
+        "name": "STRM逐条通知",
+        "description": "监控指定目录的新 STRM，等待对应 NFO 后发送逐条媒体通知，支持持久化去重",
+        "labels": "通知",
+        "version": "3.0.0",
+        "release": true,
+        "icon": "https://raw.githubusercontent.com/ranzhigg/MoviePilot-Plugins/main/icons/StrmNotify.svg",
+        "author": "ranzhigg",
+        "system_version": ">=3.0.0",
+        "level": 1,
+        "history": {
+            "v3.0.0": "独立目录监控、NFO 匹配、可配置通知和持久化去重"
+        }
     }
 }
