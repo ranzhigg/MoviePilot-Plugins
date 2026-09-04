@@ -36,6 +36,10 @@ Telegram 交流群: https://t.me/+1lcscM_EbqhkN2Rl
 
 - [115订阅站点修复 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/p115subfixer) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/p115subfixer)：修复115网盘订阅追更插件导致的订阅站点被篡改问题，并自动卸载该插件
 
+## 运维脚本
+
+- [可选 jieba 依赖恢复](docs/optional-jieba.md)：检测 Agent影视助手的分词依赖，缺失时安装，支持接入已有恢复脚本。
+
 ## 感谢
 
 - [p115client](https://github.com/ChenyangGao/p115client)
