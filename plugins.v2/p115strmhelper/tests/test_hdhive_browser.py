@@ -14,10 +14,12 @@ class TestExtractHDHiveResourceRows(TestCase):
     def test_uses_current_site_domain(self):
         """测试浏览器与 Open API 使用当前站点域名"""
         plugin_root = Path(__file__).resolve().parents[1]
-        browser_source = (plugin_root / "helper/hdhive/browser.py").read_text()
+        browser_source = (plugin_root / "helper/hdhive/browser.py").read_text(
+            encoding="utf-8"
+        )
         constants_source = (
             plugin_root / "helper/hdhive/open/constants.py"
-        ).read_text()
+        ).read_text(encoding="utf-8")
 
         self.assertIn('DEFAULT_BASE_URL = "https://re0.me"', browser_source)
         self.assertIn(
