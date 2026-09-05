@@ -938,26 +938,40 @@ class HDHivePlaywrightClient:
             "input[placeholder*='email']",
             "input[placeholder*='用户名']",
         ]
-        for sel in user_selectors:
-            try:
-                if page.query_selector(sel):
-                    page.fill(sel, username)
-                    break
-            except Exception:
-                continue
-
         pwd_selectors = [
             "input[name='password']",
             "input[type='password']",
             "input[placeholder*='密码']",
         ]
-        for sel in pwd_selectors:
-            try:
-                if page.query_selector(sel):
-                    page.fill(sel, password)
-                    break
-            except Exception:
-                continue
+
+        def _visible_field(selectors: List[str]) -> Optional[Any]:
+            for selector in selectors:
+                try:
+                    locator = page.locator(selector).first
+                    if locator.count() and locator.is_visible():
+                        return locator
+                except Exception:
+                    continue
+            return None
+
+        user_field = _visible_field(user_selectors)
+        pwd_field = _visible_field(pwd_selectors)
+        if user_field is None or pwd_field is None:
+            raise HDHiveLoginError("未找到可见的登录输入框")
+
+        filled = False
+        for _ in range(3):
+            user_field.fill(username)
+            pwd_field.fill(password)
+            page.wait_for_timeout(200)
+            if (
+                user_field.input_value() == username
+                and pwd_field.input_value() == password
+            ):
+                filled = True
+                break
+        if not filled:
+            raise HDHiveLoginError("登录表单自动填写失败")
 
         sleep(0.5)
         submit_selectors = [
@@ -1364,6 +1378,10 @@ class HDHivePlaywrightClient:
             debug.log("开始查找头像按钮")
             clicked_avatar = False
             for avatar_sel, force in (
+                ("button[aria-label='打开用户菜单']", False),
+                ("button[data-slot='drawer-trigger']", False),
+                ("button:has(span.avatar)", False),
+                ("span.avatar", True),
                 ("button:has(div.MuiAvatar-root)", False),
                 ("div.MuiAvatar-root", True),
             ):
