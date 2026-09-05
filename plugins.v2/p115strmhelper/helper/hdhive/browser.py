@@ -321,7 +321,7 @@ class HDHivePlaywrightClient:
     运行时自动选择 cloakbrowser（新版 MoviePilot）或 Playwright Chromium（旧版 MoviePilot）
     """
 
-    DEFAULT_BASE_URL = "https://hdhive.com"
+    DEFAULT_BASE_URL = "https://re0.me"
     LOGIN_PAGE = "/login"
     _CHROME_UA_SUFFIX = (
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
