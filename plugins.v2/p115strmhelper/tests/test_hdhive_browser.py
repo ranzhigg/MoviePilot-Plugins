@@ -2,10 +2,9 @@
 HDHive 浏览器资源响应测试模块
 """
 
+from pathlib import Path
 from unittest import TestCase
 
-from helper.hdhive.browser import HDHivePlaywrightClient
-from helper.hdhive.open.constants import HDHIVE_OPEN_BASE_URL
 from utils.hdhive import extract_hdhive_resource_rows
 
 
@@ -14,8 +13,17 @@ class TestExtractHDHiveResourceRows(TestCase):
 
     def test_uses_current_site_domain(self):
         """测试浏览器与 Open API 使用当前站点域名"""
-        self.assertEqual(HDHivePlaywrightClient.DEFAULT_BASE_URL, "https://re0.me")
-        self.assertEqual(HDHIVE_OPEN_BASE_URL, "https://re0.me/api/open")
+        plugin_root = Path(__file__).resolve().parents[1]
+        browser_source = (plugin_root / "helper/hdhive/browser.py").read_text()
+        constants_source = (
+            plugin_root / "helper/hdhive/open/constants.py"
+        ).read_text()
+
+        self.assertIn('DEFAULT_BASE_URL = "https://re0.me"', browser_source)
+        self.assertIn(
+            'HDHIVE_OPEN_BASE_URL = "https://re0.me/api/open"',
+            constants_source,
+        )
 
     def test_ignores_unrelated_rows_with_source_field(self):
         """测试忽略含 source 字段的非资源列表"""
