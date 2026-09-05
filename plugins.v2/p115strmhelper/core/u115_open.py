@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
+from email.utils import parsedate_to_datetime
 from itertools import batched
 from os import PathLike
 from random import randint
@@ -146,6 +147,37 @@ class U115OpenHelper:
                 logger.error(f"【P115Open】获取访问 Token 出现未知错误: {e}")
                 return None
 
+    @staticmethod
+    def _get_rate_limit_delay(headers) -> float:
+        """
+        获取 429 响应建议的等待时间。
+
+        优先使用标准的 Retry-After，兼容其秒数和 HTTP 日期两种格式；
+        没有该响应头时再读取 X-RateLimit-Reset，最后沿用原有的默认等待时间。
+        """
+        retry_after = headers.get("Retry-After")
+        if retry_after:
+            try:
+                return max(0.0, float(retry_after))
+            except (TypeError, ValueError):
+                try:
+                    retry_at = parsedate_to_datetime(retry_after)
+                    if retry_at.tzinfo is None:
+                        retry_at = retry_at.replace(tzinfo=timezone.utc)
+                    return max(0.0, retry_at.timestamp() - time())
+                except (TypeError, ValueError, OverflowError):
+                    pass
+
+        reset_header = headers.get("X-RateLimit-Reset")
+        try:
+            reset_value = float(reset_header)
+            # 部分服务返回 Unix 时间戳，旧逻辑使用的是“剩余秒数”。
+            if reset_value >= 1_000_000_000:
+                return max(0.0, reset_value - time())
+            return 5.0 + max(0.0, reset_value)
+        except (TypeError, ValueError, OverflowError):
+            return 65.0
+
     def __refresh_access_token(self, refresh_token: str) -> Optional[dict]:
         """
         刷新 access_token
@@ -203,9 +235,15 @@ class U115OpenHelper:
 
         # 处理速率限制
         if resp.status_code == 429:
-            reset_time = 5 + int(resp.headers.get("X-RateLimit-Reset", 60))
+            if retry_times <= 0:
+                logger.error(
+                    f"【P115Open】{method} 请求 {endpoint} 限流，重试次数用尽！"
+                )
+                return None
+            kwargs["retry_limit"] = retry_times - 1
+            reset_time = self._get_rate_limit_delay(resp.headers)
             logger.debug(
-                f"【P115Open】{method} 请求 {endpoint} 限流，等待{reset_time}秒后重试"
+                f"【P115Open】{method} 请求 {endpoint} 限流，等待{reset_time:g}秒后重试"
             )
             sleep(reset_time)
             return self._request_api(method, endpoint, result_key, **kwargs)
@@ -233,7 +271,7 @@ class U115OpenHelper:
             error_msg = ret_data.get("message")
             if not no_error_log:
                 logger.warn(f"【P115Open】{method} 请求 {endpoint} 出错：{error_msg}")
-            if "已达到当前访问上限" in error_msg:
+            if error_msg and "已达到当前访问上限" in error_msg:
                 if retry_times <= 0:
                     logger.error(
                         f"【P115Open】{method} 请求 {endpoint} 达到访问上限，重试次数用尽！"

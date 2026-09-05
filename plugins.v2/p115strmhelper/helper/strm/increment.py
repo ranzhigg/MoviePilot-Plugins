@@ -524,15 +524,37 @@ class IncrementSyncStrmHelper:
             logger.info(f"【增量STRM生成】开始生成网盘目录树: {pan_media_dir}")
 
             try:
+                pan_to_local_paths: List[str] = []
+                pan_paths: List[str] = []
+                pan_to_local_strm_paths: List[str] = []
+
+                def flush_path_batch():
+                    """批量写入目录树，避免每个文件单独执行一次 Redis Pipeline。"""
+                    if not pan_to_local_paths:
+                        return
+                    self.pan_to_local_tree.generate_tree_from_list(
+                        pan_to_local_paths, append=True
+                    )
+                    self.pan_tree.generate_tree_from_list(pan_paths, append=True)
+                    if pan_to_local_strm_paths:
+                        self.pan_to_local_strm_tree.generate_tree_from_list(
+                            pan_to_local_strm_paths, append=True
+                        )
+                    pan_to_local_paths.clear()
+                    pan_paths.clear()
+                    pan_to_local_strm_paths.clear()
+
                 for path1, path2 in self.__itertree(
                     pan_path=pan_media_dir, local_path=target_dir
                 ):
-                    self.pan_to_local_tree.generate_tree_from_list([path1], append=True)
-                    self.pan_tree.generate_tree_from_list([path2], append=True)
+                    pan_to_local_paths.append(path1)
+                    pan_paths.append(path2)
                     if Path(path1).suffix.lower() == ".strm":
-                        self.pan_to_local_strm_tree.generate_tree_from_list(
-                            [path1], append=True
-                        )
+                        pan_to_local_strm_paths.append(path1)
+                    if len(pan_to_local_paths) >= 5_000:
+                        flush_path_batch()
+
+                flush_path_batch()
 
                 logger.info(f"【增量STRM生成】网盘目录树生成完成: {pan_media_dir}")
                 return
@@ -906,19 +928,27 @@ class IncrementSyncStrmHelper:
                         logger.error(f"【增量STRM生成】{path} 目录树生成错误")
                     else:
                         # 生成或者下载文件
-                        for line in self.pan_to_local_tree.compare_trees_lines(
+                        diff_lines = self.pan_to_local_tree.compare_trees_lines(
                             self.local_tree
-                        ):
-                            pan_path_str = self.pan_tree.get_path_by_line_number(line)
-                            local_path_str = (
-                                self.pan_to_local_tree.get_path_by_line_number(line)
+                        )
+                        for line_chunk in batched(diff_lines, 5_000):
+                            pan_paths = self.pan_tree.get_paths_by_line_numbers(
+                                line_chunk
                             )
-                            if pan_path_str and local_path_str:
-                                self.total_iterated += 1
-                                self.__handle_addition_path(
-                                    pan_path=pan_path_str,
-                                    local_path=local_path_str,
+                            local_paths = (
+                                self.pan_to_local_tree.get_paths_by_line_numbers(
+                                    line_chunk
                                 )
+                            )
+                            for pan_path_str, local_path_str in zip(
+                                pan_paths, local_paths
+                            ):
+                                if pan_path_str and local_path_str:
+                                    self.total_iterated += 1
+                                    self.__handle_addition_path(
+                                        pan_path=pan_path_str,
+                                        local_path=local_path_str,
+                                    )
 
                         # 清理无效 STRM 文件
                         if self.remove_unless_strm:

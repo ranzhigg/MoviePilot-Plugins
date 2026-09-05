@@ -487,6 +487,8 @@ class StrmUrlGetter:
 
         strm_url = f"{self.base_url_cache}?share_code={share_code}&receive_code={receive_code}&id={file_id}"
         if configer.strm_url_format == "pickname":
+            if self.strm_url_encode:
+                file_name = quote(file_name)
             strm_url += f"&file_name={file_name}"
 
         return strm_url

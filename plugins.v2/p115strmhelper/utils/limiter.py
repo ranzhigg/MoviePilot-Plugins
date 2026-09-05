@@ -61,14 +61,14 @@ class ApiEndpointCooldown:
         :return dict: API 返回结果
         """
         if self.cooldown > 0:
-            sleep_duration = 0
             with self.lock:
                 now = monotonic()
-                elapsed = now - self.last_call_time
-                if elapsed < self.cooldown:
-                    sleep_duration = self.cooldown - elapsed
+                # 先在锁内预约下一次调用时间。若只读取后再睡眠，并发线程
+                # 会同时看到同一个 last_call_time，醒来后仍可能挤在一起请求。
+                scheduled_time = max(now, self.last_call_time + self.cooldown)
+                self.last_call_time = scheduled_time
+
+            sleep_duration = scheduled_time - now
             if sleep_duration > 0:
                 sleep(sleep_duration)
-            with self.lock:
-                self.last_call_time = monotonic()
         return self.api_callable(payload)

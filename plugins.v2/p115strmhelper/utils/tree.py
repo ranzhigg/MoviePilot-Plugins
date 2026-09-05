@@ -51,6 +51,15 @@ class DirectoryTreeStorage(ABC):
         pass
 
     @abstractmethod
+    def get_paths_by_line_numbers(
+        self, line_numbers: Iterable[int]
+    ) -> List[Optional[str]]:
+        """
+        批量根据行号获取路径
+        """
+        pass
+
+    @abstractmethod
     def count(self) -> int:
         """
         返回树中的有效条目总数
@@ -133,6 +142,17 @@ class TxtFileStorage(DirectoryTreeStorage):
         :return str: 路径字符串，无效行号时返回 None
         """
         return self._rust.get_path_by_line_number(self.file_path, line_number)
+
+    def get_paths_by_line_numbers(
+        self, line_numbers: Iterable[int]
+    ) -> List[Optional[str]]:
+        """
+        批量根据行号获取 TXT 文件中的路径。
+
+        TXT 后端没有批量读取接口，保留逐行读取语义；Redis 后端会使用
+        Pipeline，DirectoryTree 上层无需区分后端。
+        """
+        return [self.get_path_by_line_number(line) for line in line_numbers]
 
     def count(self) -> int:
         """
@@ -248,10 +268,15 @@ class RedisStorage(DirectoryTreeStorage):
             if not paths_chunk_bytes:
                 break
 
+            pipe = self.client.pipeline()
             for path_bytes in paths_chunk_bytes:
-                line_num += 1
-                if not self.client.sismember(other_storage._set_key, path_bytes):
-                    yield line_num
+                pipe.sismember(other_storage._set_key, path_bytes)
+            memberships = pipe.execute()
+
+            for offset, is_member in enumerate(memberships):
+                if not is_member:
+                    yield line_num + offset + 1
+            line_num += len(paths_chunk_bytes)
 
     def get_path_by_line_number(self, line_number: int) -> Union[str, None]:
         """
@@ -264,6 +289,28 @@ class RedisStorage(DirectoryTreeStorage):
             return None
         path_bytes = self.client.lindex(self._list_key, line_number - 1)
         return path_bytes.decode("utf-8") if path_bytes else None
+
+    def get_paths_by_line_numbers(
+        self, line_numbers: Iterable[int]
+    ) -> List[Optional[str]]:
+        """
+        使用 Redis Pipeline 批量读取目录树路径，避免每个差异行产生一次网络往返。
+        """
+        line_numbers = list(line_numbers)
+        if not line_numbers:
+            return []
+
+        pipe = self.client.pipeline()
+        valid_indexes = []
+        for index, line_number in enumerate(line_numbers):
+            if line_number > 0:
+                pipe.lindex(self._list_key, line_number - 1)
+                valid_indexes.append(index)
+
+        paths: List[Optional[str]] = [None] * len(line_numbers)
+        for index, path_bytes in zip(valid_indexes, pipe.execute()):
+            paths[index] = path_bytes.decode("utf-8") if path_bytes else None
+        return paths
 
     def count(self) -> int:
         """
@@ -368,6 +415,14 @@ class DirectoryTree:
         :return str: 路径字符串，无效行号时返回 None
         """
         return self._storage.get_path_by_line_number(line_number)
+
+    def get_paths_by_line_numbers(
+        self, line_numbers: Iterable[int]
+    ) -> List[Optional[str]]:
+        """
+        批量根据行号获取路径。
+        """
+        return self._storage.get_paths_by_line_numbers(line_numbers)
 
     def count(self) -> int:
         """
