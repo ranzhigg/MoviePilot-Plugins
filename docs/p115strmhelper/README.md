@@ -25,7 +25,77 @@
 #### **独家实验性功能**
 - 单资源多设备同时播放
 
+#### **Plex App 播放支持（已集成）**
+- 不依赖 Emby：MoviePilot 读取 STRM 首行的 115 302 地址，并用 `ffprobe` 探测真实媒体流。
+- 通过 Plex MediaInfo Helper 将视频、音频和字幕流信息安全写入 Plex 本地数据库，帮助 Plex App 正确识别 STRM 媒体并进行直播放。
+- 支持播放停止 Webhook：电影补全当前条目，剧集可按配置预取后续集数；也支持按媒体库手动全量补全。
+- 只负责 Plex App 所需的媒体信息补全，不包含 Plex Web 反向代理，也不会改写 STRM 文件内容。
+
 -------
+
+## Plex App 播放支持
+
+### 工作流程
+
+```text
+Plex App 播放/停止
+        ↓（Webhook，可选）
+P115StrmHelper 获取 Plex 条目与 STRM 路径
+        ↓
+按路径映射读取 STRM，并用 ffprobe 跟随 115 302 探测媒体流
+        ↓
+Plex MediaInfo Helper 写入 Plex 本地数据库
+        ↓
+Plex App 重新识别媒体流并支持直播放
+```
+
+### 前置条件
+
+1. MoviePilot 容器能够访问 Plex API 地址和媒体库对应的 STRM 文件。
+2. 在 Plex 所在机器部署 [Plex MediaInfo Helper](../../plex-mediainfo-helper/README.md)，并确认 `/health`、`/dbinfo` 正常。
+3. 准备 Plex Token 与 Helper Token。Token 只填写在 MoviePilot 配置中，不要提交到仓库或文档。
+
+### P115StrmHelper 配置
+
+在「Plex App 播放」中填写以下项目：
+
+| 配置项 | 说明 | 示例 |
+| --- | --- | --- |
+| 启用 Plex App 媒体补全 | 开启 Plex App 补全链路 | 开启 |
+| Plex 直连地址 | MoviePilot 可访问的 Plex API 根地址 | `http://10.0.200.10:32400` |
+| Plex Token | Plex 的 `X-Plex-Token` | 不公开 |
+| Plex MediaInfo Helper 地址 | Helper 的 HTTP 地址 | `http://host.docker.internal:9001` |
+| Helper Token | 对应 Helper 的 `PTH_TOKEN` | 不公开 |
+| Plex 路径 → MoviePilot 路径映射 | Plex 返回路径到 MP 容器路径的映射 | `/Volumes/data=/media` |
+| Plex 媒体库 key | 需要补全的库，逗号分隔 | `39,40,44` |
+| 启用播放停止 Webhook | 播放结束后自动补全 | 开启 |
+
+`Plex 直连地址` 是 Plex API 地址，不是 STRM 文件里的 MoviePilot 地址；例如 `http://y.yiya.love:3000` 是 STRM 访问地址，不能填到 Plex API 地址中。
+
+建议初始使用以下安全参数：
+
+- 仅补全缺少媒体流信息的项目：开启
+- 覆盖旧媒体流：开启
+- `ffprobe` 超时：40 秒
+- 探测并发数：3
+- Webhook 去重窗口：300 秒
+- 剧集预取：5 集
+
+### Webhook
+
+开启后，将 Plex Webhook 指向当前 MoviePilot 的 P115StrmHelper 接口：
+
+```text
+http://<MoviePilot地址>/api/v1/plugin/P115StrmHelper/plex_app/webhook
+```
+
+如 MoviePilot 的外部访问入口需要 API Key，请按现有部署方式附加认证参数。配置完成后，先用「检查 Helper」，再用「读取 Plex 媒体库」确认 section key，最后执行一次「立即补全」验证写库结果。
+
+### 使用边界
+
+- 该功能针对 Plex App 的 STRM 媒体流识别与直播放支持。
+- Plex Web 浏览器和 PC 客户端是否直播放仍取决于 Plex 自身的转码、网络和客户端能力；本功能不提供 Plex Web 反向代理。
+- Helper 直接写入 Plex 数据库，Plex 升级后应重新执行 `/dbinfo` 检查并先备份数据库。
 
 ## 配置解析
 
