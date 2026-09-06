@@ -98,13 +98,13 @@ class MediaInfoCompleter:
             return
         if res is None:
             logger.warning(
-                "PlexToolbox 写入失败[%s]：helper 无响应/请求异常，%s 条全部未写入",
+                "Plex App 写入失败[%s]：helper 无响应/请求异常，%s 条全部未写入",
                 scope, sent,
             )
             return
         if res.get("busy"):
             logger.warning(
-                "PlexToolbox 写入未完成[%s]：Plex 繁忙，%s 条未写入（可勾选强制写入或错峰重试）",
+                "Plex App 写入未完成[%s]：Plex 繁忙，%s 条未写入（可勾选强制写入或错峰重试）",
                 scope, sent,
             )
             return
@@ -112,11 +112,11 @@ class MediaInfoCompleter:
         ok = summary.get("written_ok", 0)
         if failed > 0:
             logger.warning(
-                "PlexToolbox 写入部分失败[%s]：成功 %s / 共 %s，失败 %s 条",
+                "Plex App 写入部分失败[%s]：成功 %s / 共 %s，失败 %s 条",
                 scope, ok, sent, failed,
             )
         else:
-            logger.info("PlexToolbox 写入成功[%s]：%s 条全部写入", scope, ok)
+            logger.info("Plex App 写入成功[%s]：%s 条全部写入", scope, ok)
 
     def _log_unresolved(self, scope: str, unresolved_files: List[str]) -> None:
         """
@@ -128,7 +128,7 @@ class MediaInfoCompleter:
         if not unresolved_files:
             return
         logger.warning(
-            "PlexToolbox 未取到媒体信息[%s]：%s 个文件（Emby/ffprobe 均未命中）",
+            "Plex App 未取到媒体信息[%s]：%s 个文件（ffprobe 未命中）",
             scope, len(unresolved_files),
         )
         for f in unresolved_files[:50]:

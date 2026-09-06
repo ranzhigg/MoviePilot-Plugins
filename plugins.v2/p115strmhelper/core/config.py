@@ -1,6 +1,5 @@
 from pathlib import Path
 from platform import system, release
-from re import fullmatch as re_fullmatch
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from orjson import loads, JSONDecodeError
@@ -239,44 +238,6 @@ class ConfigManager(BaseModel):
                 )
                 data[field] = CronUtils.get_default_cron()
         return data
-
-    @field_validator("hdhive_checkin_time_range", mode="before")
-    @classmethod
-    def _validate_hdhive_checkin_time_range(cls, v: Any) -> str:
-        """
-        校验 HDHive 签到时间窗口字符串
-        """
-        if v is None or (isinstance(v, str) and not v.strip()):
-            return "06:00-09:00"
-        s = str(v).strip()
-        m = re_fullmatch(
-            r"([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)",
-            s,
-        )
-        if not m:
-            raise ValueError(
-                "hdhive_checkin_time_range 须为 HH:MM-HH:MM 格式（如 06:30-09:45）"
-            )
-        h1, m1, h2, m2 = (
-            int(m.group(1)),
-            int(m.group(2)),
-            int(m.group(3)),
-            int(m.group(4)),
-        )
-        start_min = h1 * 60 + m1
-        end_min = h2 * 60 + m2
-        if start_min >= end_min:
-            raise ValueError("签到随机时间段结束时间须晚于开始时间")
-        return s
-
-    @model_validator(mode="after")
-    def _hdhive_checkin_mutual_exclusive(self) -> "ConfigManager":
-        """
-        每日签到与赌狗签到二选一：同时开启时关闭赌狗
-        """
-        if self.hdhive_checkin_daily_enabled and self.hdhive_checkin_gamble_enabled:
-            self.hdhive_checkin_gamble_enabled = False
-        return self
 
     @model_validator(mode="after")
     def _validate_share_audit_wait(self) -> "ConfigManager":
@@ -699,30 +660,6 @@ class ConfigManager(BaseModel):
         default=None,
         description="TG 搜索频道",
     )
-    hdhive_search_enabled: bool = Field(
-        default=False,
-        description="HDHive 频道搜索（浏览器自动化）",
-    )
-    hdhive_checkin_username: Optional[str] = Field(
-        default=None,
-        description="HDHive 账户（签到与频道搜索共用）",
-    )
-    hdhive_checkin_password: Optional[str] = Field(
-        default=None,
-        description="HDHive 密码（签到与频道搜索共用）",
-    )
-    hdhive_checkin_daily_enabled: bool = Field(
-        default=False,
-        description="HDHive 每日签到",
-    )
-    hdhive_checkin_gamble_enabled: bool = Field(
-        default=False,
-        description="HDHive 赌狗签到",
-    )
-    hdhive_checkin_time_range: Optional[str] = Field(
-        default="06:00-09:00",
-        description="HDHive 签到随机时间段 HH:MM-HH:MM",
-    )
     p115_checkin_enabled: bool = Field(
         default=False,
         description="115 每日签到",
@@ -732,6 +669,49 @@ class ConfigManager(BaseModel):
         description="115 签到随机时间段 HH:MM-HH:MM",
     )
     same_playback: bool = Field(default=False, description="多端播放同一个文件")
+
+    # Plex App 播放支持：探测 STRM 实际媒体流并写入 Plex 本地数据库。
+    # 该功能不包含 Plex Web 反向代理，仅保留 App 所需的媒体信息补全链路。
+    plex_app_enabled: bool = Field(default=False, description="Plex App 媒体信息补全")
+    plex_app_plex_url: Optional[str] = Field(
+        default=None, description="Plex 直连地址"
+    )
+    plex_app_plex_token: Optional[str] = Field(
+        default=None, description="Plex Token"
+    )
+    plex_app_helper_url: Optional[str] = Field(
+        default=None, description="Plex MediaInfo Helper 地址"
+    )
+    plex_app_helper_token: Optional[str] = Field(
+        default=None, description="Plex MediaInfo Helper Token"
+    )
+    plex_app_ffprobe_path_map: Optional[str] = Field(
+        default="/Volumes/data=/media", description="Plex 路径到 MoviePilot 路径映射"
+    )
+    plex_app_ffprobe_timeout: int = Field(
+        default=40, ge=1, le=300, description="ffprobe 超时时间（秒）"
+    )
+    plex_app_overwrite_streams: bool = Field(
+        default=True, description="写入前覆盖 Plex 旧媒体流"
+    )
+    plex_app_only_missing: bool = Field(
+        default=True, description="仅补全缺少媒体流信息的 STRM"
+    )
+    plex_app_concurrency: int = Field(
+        default=3, ge=1, le=16, description="ffprobe 并发数"
+    )
+    plex_app_sections: Optional[str] = Field(
+        default=None, description="Plex 媒体库 key，逗号分隔"
+    )
+    plex_app_webhook_enabled: bool = Field(
+        default=False, description="接收 Plex 播放停止 Webhook"
+    )
+    plex_app_dedup_window: int = Field(
+        default=300, ge=0, le=86400, description="播放补全去重窗口（秒）"
+    )
+    plex_app_forward_episodes: int = Field(
+        default=5, ge=0, le=50, description="剧集播放后预取集数"
+    )
 
     error_info_upload: bool = Field(default=True, description="上传错误信息")
     upload_module_enhancement: bool = Field(default=False, description="115 上传增强")

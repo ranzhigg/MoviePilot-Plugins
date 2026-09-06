@@ -4,7 +4,7 @@ from typing import Dict, Any, Tuple, Optional, List
 
 from app.schemas.message import ChannelCapabilityManager
 
-from ..helper.search import HDHiveSearch, MediaSearcher, TgSearcher
+from ..helper.search import MediaSearcher, TgSearcher
 from ..core.i18n import i18n
 from .framework.callbacks import Action
 from .framework.registry import view_registry
@@ -142,9 +142,6 @@ class ViewRenderer(BaseViewRenderer):
                     channels=configer.tg_search_channels,
                 )
             )
-        if configer.hdhive_search_enabled:
-            data.extend(HDHiveSearch.fetch_resources(resource_dict))
-
         # 记录到session，待渲染使用
         session.business.resource_info = {"data": data, "datatime": self.__now_date()}
 
@@ -449,16 +446,13 @@ class ViewRenderer(BaseViewRenderer):
             for i, data in enumerate(paged_items):
                 original_index = resource_data.index(data)
                 num_prefix = f"{StringUtils.to_emoji_number(start_index + i + 1)}. "
-                if data.get("source") == HDHiveSearch.SOURCE:
-                    text_lines.append(HDHiveSearch.format_list_block(data, num_prefix))
-                else:
-                    label = data.get("taskname", "未知名称")
-                    ch_name = (data.get("channel_name") or "").strip()
-                    display = f"【{ch_name}】{label}" if ch_name else label
-                    share_url = (data.get("shareurl") or "").strip()
-                    if share_url:
-                        display = f"{display} [🔗 链接]({share_url})"
-                    text_lines.append(f"{num_prefix}{display}")
+                label = data.get("taskname", "未知名称")
+                ch_name = (data.get("channel_name") or "").strip()
+                display = f"【{ch_name}】{label}" if ch_name else label
+                share_url = (data.get("shareurl") or "").strip()
+                if share_url:
+                    display = f"{display} [🔗 链接]({share_url})"
+                text_lines.append(f"{num_prefix}{display}")
 
                 # 支持按钮时，生成按钮
                 if supports_buttons:

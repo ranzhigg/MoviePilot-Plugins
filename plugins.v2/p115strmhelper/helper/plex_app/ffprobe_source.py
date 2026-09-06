@@ -46,12 +46,12 @@ def parse_path_map(raw: str) -> List[PathMapping]:
         elif "=" in line:
             source, target = line.split("=", 1)
         else:
-            logger.warning("PlexToolbox 路径映射格式错误，已忽略: %s", line)
+            logger.warning("Plex App 路径映射格式错误，已忽略: %s", line)
             continue
         source = _normalise_path(source)
         target = _normalise_path(target)
         if not source or not target or not source.startswith("/") or not target.startswith("/"):
-            logger.warning("PlexToolbox 路径映射需使用绝对路径，已忽略: %s", line)
+            logger.warning("Plex App 路径映射需使用绝对路径，已忽略: %s", line)
             continue
         item = (source, target)
         if item not in mappings:

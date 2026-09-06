@@ -4,7 +4,7 @@ Plex MediaInfo Helper —— 运行在 Plex 所在机器上的本地写库小服
 
 设计目标：
 - 只在 Plex 数据库文件本地做写入，避免跨网络写 SQLite 造成的锁/损库风险。
-- 由 MoviePilot 侧的 PlexToolbox 插件计算好媒体流信息后，通过 HTTP 发送到本服务写入。
+- 由 MoviePilot 侧的 P115StrmHelper Plex App 支持计算好媒体流信息后，通过 HTTP 发送到本服务写入。
 - 写入前自动备份数据库、检测 Plex 是否繁忙、运行时自省表结构，兼容不同 Plex 版本。
 
 安全约束：

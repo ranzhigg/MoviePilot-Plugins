@@ -1,6 +1,6 @@
 # Plex MediaInfo Helper 部署说明
 
-在 **Plex 所在机器（192.168.0.122）** 上运行的本地写库小服务。PlexToolbox 插件负责计算媒体流信息，通过 HTTP 发送到本服务，由本服务在 **数据库文件本地** 安全写入，避免跨网络写 SQLite 损库。
+在 **Plex 所在机器（192.168.0.122）** 上运行的本地写库小服务。P115StrmHelper 的 Plex App 支持负责计算媒体流信息，通过 HTTP 发送到本服务，由本服务在 **数据库文件本地** 安全写入，避免跨网络写 SQLite 损库。
 
 ## 前置：找到 Plex 数据库路径
 
@@ -166,13 +166,13 @@ docker compose up -d
 
 ## 无 Emby 时使用 ffprobe
 
-PlexToolbox V3 可以不依赖 Emby：MoviePilot 会读取 Plex 条目对应的 `.strm` 首行，
+P115StrmHelper 的 Plex App 支持可以不依赖 Emby：MoviePilot 会读取 Plex 条目对应的 `.strm` 首行，
 直接用 ffprobe 探测其中的 P115 302 地址，再把媒体流信息发送给本 helper 写入 Plex。
 该流程只读取 STRM，不会改写 STRM 内容；helper 仍必须部署在 Plex 数据库所在机器。
 
-在 PlexToolbox 的「媒体信息补全」中：
+在 P115StrmHelper 的「Plex App 播放」中：
 
-1. 开启「启用 ffprobe」，Emby 可留空或关闭。
+1. 开启「启用 Plex App 媒体补全」。该功能使用 ffprobe 探测 STRM 指向的真实媒体。
 2. 将「Plex 路径 → MoviePilot 容器路径映射」设为实际映射，例如
    `/Volumes/data=/media`。
 3. 确认 MP 容器能访问映射后的 `.strm` 文件，并用「检查 helper」确认写库服务可达。

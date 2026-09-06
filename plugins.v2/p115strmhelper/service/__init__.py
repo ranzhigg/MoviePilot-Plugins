@@ -43,7 +43,6 @@ from ..service.backup import BackupService
 from ..service.fuse import FuseManager
 from ..service.one_shot import schedule_plugin_one_shot
 from ..service.life import monitor_life_thread_worker
-from ..service.hdhive_checkin.scheduler import hdhive_checkin_scheduler_tick
 from ..service.p115_checkin.scheduler import (
     p115_checkin_scheduler_tick as p115_scheduler_tick,
 )
@@ -664,12 +663,6 @@ class ServiceHelper:
                 title=i18n.translate("inc_sync_done_title"),
                 text=text,
             )
-
-    def hdhive_checkin_scheduler_tick(self) -> None:
-        """
-        HDHive 签到调度
-        """
-        hdhive_checkin_scheduler_tick()
 
     def p115_checkin_scheduler_tick(self) -> None:
         """

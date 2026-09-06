@@ -1,3 +1,4 @@
+import json
 from time import sleep
 from copy import deepcopy
 from dataclasses import asdict
@@ -42,7 +43,6 @@ from .sidebar_nav import build_sidebar_nav
 from .version import VERSION
 from .api import Api
 from .service import servicer
-from .service.hdhive_checkin.job import run_hdhive_checkin_once
 from .service.p115_checkin.job import run_p115_checkin_once
 from .core.cache import (
     pantransfercacher,
@@ -69,7 +69,6 @@ from .helper.strm import (
     ShareInteractiveGenStrmQueue,
     TransferStrmHelper,
 )
-from .helper.hdhive.browser import is_hdhive_search_ready
 from .helper.strm.full import strm_cleanup_interaction
 from .helper.mediasyncdel import MediaSyncDelHelper
 from .helper.mediasyncdel.webhook_queue import (
@@ -80,6 +79,7 @@ from .utils.path import PathUtils
 from .utils.offline_link import OfflineLinkResolver
 from .utils.sentry import sentry_manager
 from .helper.share.share_links import ShareLinkResolver
+from .helper.plex_app import PlexAppSupport
 from .utils.rename_dict import RenameDictUtils
 from .utils.url import UrlUtils
 
@@ -167,6 +167,8 @@ class P115StrmHelper(_PluginBase):
         初始化
         """
         super().__init__()
+
+        self.plex_app_support = PlexAppSupport()
 
         # 初始化配置项
         configer.load_from_dict(config or {})
@@ -327,13 +329,6 @@ class P115StrmHelper(_PluginBase):
                 "data": {"action": "p115_search"},
             },
             {
-                "cmd": "/hdhivechin",
-                "event": EventType.PluginAction,
-                "desc": "手动 HDHive 签到",
-                "category": "",
-                "data": {"action": "hdhive_checkin_manual"},
-            },
-            {
                 "cmd": "/p115_checkin",
                 "event": EventType.PluginAction,
                 "desc": "手动 115 签到",
@@ -441,6 +436,41 @@ class P115StrmHelper(_PluginBase):
                 "methods": ["GET"],
                 "auth": "bear",
                 "summary": "获取配置",
+            },
+            {
+                "path": "/plex_app/sections",
+                "endpoint": self.plex_app_sections_api,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取 Plex 媒体库",
+            },
+            {
+                "path": "/plex_app/helper_check",
+                "endpoint": self.plex_app_helper_check_api,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "检查 Plex MediaInfo Helper",
+            },
+            {
+                "path": "/plex_app/complete",
+                "endpoint": self.plex_app_complete_api,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "补全 Plex App 媒体信息",
+            },
+            {
+                "path": "/plex_app/result",
+                "endpoint": self.plex_app_result_api,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取 Plex App 补全结果",
+            },
+            {
+                "path": "/plex_app/webhook",
+                "endpoint": self.plex_app_webhook_api,
+                "methods": ["POST"],
+                "auth": "apikey",
+                "summary": "接收 Plex 播放 Webhook",
             },
             {
                 "path": "/get_machine_id",
@@ -912,24 +942,6 @@ class P115StrmHelper(_PluginBase):
                     "kwargs": {},
                 }
             )
-        if (
-            configer.enabled
-            and (configer.hdhive_checkin_username or "").strip()
-            and (configer.hdhive_checkin_password or "").strip()
-            and (
-                configer.hdhive_checkin_daily_enabled
-                or configer.hdhive_checkin_gamble_enabled
-            )
-        ):
-            cron_service.append(
-                {
-                    "id": "P115StrmHelper_hdhive_checkin",
-                    "name": "HDHive 签到调度",
-                    "trigger": CronTrigger.from_crontab("*/5 * * * *"),
-                    "func": servicer.hdhive_checkin_scheduler_tick,
-                    "kwargs": {},
-                }
-            )
         if configer.enabled and configer.p115_checkin_enabled:
             cron_service.append(
                 {
@@ -937,6 +949,16 @@ class P115StrmHelper(_PluginBase):
                     "name": "115 签到调度",
                     "trigger": CronTrigger.from_crontab("*/5 * * * *"),
                     "func": servicer.p115_checkin_scheduler_tick,
+                    "kwargs": {},
+                }
+            )
+        if configer.enabled and configer.plex_app_enabled and configer.plex_app_helper_url:
+            cron_service.append(
+                {
+                    "id": "P115StrmHelper_plex_app_helper_health",
+                    "name": "Plex App Helper 健康检查",
+                    "trigger": CronTrigger.from_crontab("*/5 * * * *"),
+                    "func": self.plex_app_support.helper_health_tick,
                     "kwargs": {},
                 }
             )
@@ -979,6 +1001,55 @@ class P115StrmHelper(_PluginBase):
         Vue模式不使用Vuetify页面定义
         """
         return None
+
+    def plex_app_sections_api(self) -> Dict[str, Any]:
+        """返回 Plex 媒体库列表，供 Plex App 配置页选择。"""
+        return self.plex_app_support.list_sections()
+
+    def plex_app_helper_check_api(self) -> Dict[str, Any]:
+        """检查 Plex MediaInfo Helper 连通性。"""
+        return self.plex_app_support.helper_check()
+
+    def plex_app_complete_api(
+        self, payload: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """手动触发 Plex STRM 媒体信息补全。"""
+        payload = payload or {}
+        section_keys = payload.get("section_keys")
+        if isinstance(section_keys, str):
+            section_keys = [
+                item.strip()
+                for item in section_keys.replace("\n", ",").split(",")
+                if item.strip()
+            ]
+        if not isinstance(section_keys, list):
+            section_keys = None
+        return self.plex_app_support.run_completion(
+            source="api",
+            force_write=bool(payload.get("force_write", False)),
+            section_keys=section_keys,
+        )
+
+    def plex_app_result_api(self) -> Dict[str, Any]:
+        """返回最近的 Plex App 补全结果。"""
+        return self.plex_app_support.result()
+
+    async def plex_app_webhook_api(self, request: Request) -> Dict[str, Any]:
+        """接收 Plex Webhook，处理 media.stop/media.scrobble 事件。"""
+        payload_text = ""
+        try:
+            form = await request.form()
+            payload = form.get("payload")
+            if isinstance(payload, str):
+                payload_text = payload
+        except Exception:
+            try:
+                payload_text = (await request.body()).decode("utf-8", "replace")
+            except Exception:
+                payload_text = ""
+        if not payload_text:
+            return {"success": False, "error": "空 payload"}
+        return self.plex_app_support.webhook_payload(payload_text)
 
     def get_dashboard_meta(self) -> Optional[List[Dict[str, str]]]:
         """
@@ -1242,9 +1313,7 @@ class P115StrmHelper(_PluginBase):
             return
         userid = self._get_event_userid(event_data)
 
-        has_tg = bool(configer.tg_search_channels)
-        has_hdhive = is_hdhive_search_ready()
-        if not has_tg and not has_hdhive:
+        if not configer.tg_search_channels:
             post_message(
                 channel=event.event_data.get("channel"),
                 source=event.event_data.get("source"),
@@ -1288,27 +1357,6 @@ class P115StrmHelper(_PluginBase):
             self._render_and_send(session)
         except Exception as e:
             logger.error(f"处理 search 命令失败: {e}", exc_info=True)
-
-    @eventmanager.register(EventType.PluginAction)
-    def hdhive_checkin_manual(self, event: Event):
-        """
-        远程命令 /hdhivechin 手动 HDHive 签到
-        """
-        if not event:
-            return
-        event_data = event.event_data
-        if not event_data or event_data.get("action") != "hdhive_checkin_manual":
-            return
-        userid = self._get_event_userid(event_data)
-
-        ok, text = run_hdhive_checkin_once(manual=True, send_notify=False)
-        post_message(
-            channel=event.event_data.get("channel"),
-            source=event.event_data.get("source"),
-            title="HDHive 手动签到" + ("成功" if ok else "失败"),
-            text="\n" + text + "\n",
-            userid=userid,
-        )
 
     @eventmanager.register(EventType.PluginAction)
     def p115_checkin_manual(self, event: Event):

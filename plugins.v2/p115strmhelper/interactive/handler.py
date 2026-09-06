@@ -12,12 +12,6 @@ from .session import Session
 from ..core.config import configer
 from ..core.message import post_message
 from ..core.i18n import i18n
-from ..helper.hdhive.browser import (
-    HDHiveError,
-    HDHiveLoginError,
-    get_hdhive_browser_client,
-)
-from ..helper.search import HDHiveSearch
 from ..helper.strm import ShareInteractiveGenStrmQueue
 from ..service import servicer
 
@@ -318,29 +312,7 @@ class ActionHandler(BaseActionHandler):
                 raise ValueError("当前没有可用的资源。")
             if 0 <= item_index < len(search_data):
                 data = search_data[item_index]
-                share_url = ""
-                if data.get("source") == HDHiveSearch.SOURCE or data.get("hdhive_slug"):
-                    slug = data.get("hdhive_slug")
-                    if not slug:
-                        raise ValueError("HDHive 资源 slug 无效")
-                    try:
-                        pw_client = get_hdhive_browser_client()
-                        if pw_client is None:
-                            raise HDHiveLoginError("未配置 HDHive 账号密码")
-                        unlocked = pw_client.unlock_resource(str(slug))
-                        logger.info("HDHive 浏览器解锁成功: %s", unlocked)
-                        share_url = (unlocked.get("full_url") or "").strip()
-                    except HDHiveError as e:
-                        logger.error(
-                            "HDHive 解锁失败: slug=%s, error=%s",
-                            slug,
-                            e,
-                            exc_info=True,
-                        )
-                        session.go_to("subscribe_fail")
-                        return None
-                else:
-                    share_url = (data.get("shareurl") or "").strip()
+                share_url = (data.get("shareurl") or "").strip()
                 if not share_url:
                     raise ValueError("没有可用的分享链接")
                 base = configer.get_config("moviepilot_address").rstrip("/")
