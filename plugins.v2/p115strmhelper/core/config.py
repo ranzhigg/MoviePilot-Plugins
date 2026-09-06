@@ -656,10 +656,6 @@ class ConfigManager(BaseModel):
         description="目录上传交由CloudDrive2储存",
     )
 
-    tg_search_channels: Optional[List[Dict]] = Field(
-        default=None,
-        description="TG 搜索频道",
-    )
     p115_checkin_enabled: bool = Field(
         default=False,
         description="115 每日签到",

@@ -322,13 +322,6 @@ class P115StrmHelper(_PluginBase):
                 "data": {"action": "p115_strm"},
             },
             {
-                "cmd": "/sh",
-                "event": EventType.PluginAction,
-                "desc": "搜索指定资源",
-                "category": "",
-                "data": {"action": "p115_search"},
-            },
-            {
                 "cmd": "/p115_checkin",
                 "event": EventType.PluginAction,
                 "desc": "手动 115 签到",
@@ -1302,63 +1295,6 @@ class P115StrmHelper(_PluginBase):
         )
 
     @eventmanager.register(EventType.PluginAction)
-    def p115_search(self, event: Event):
-        """
-        处理搜索请求
-        """
-        if not event:
-            return
-        event_data = event.event_data
-        if not event_data or event_data.get("action") != "p115_search":
-            return
-        userid = self._get_event_userid(event_data)
-
-        if not configer.tg_search_channels:
-            post_message(
-                channel=event.event_data.get("channel"),
-                source=event.event_data.get("source"),
-                title=i18n.translate("p115_search_config_error"),
-                userid=userid,
-            )
-            return
-
-        args = event_data.get("arg_str")
-        if not args:
-            logger.error(f"【搜索】缺少参数：{event_data}")
-            post_message(
-                channel=event.event_data.get("channel"),
-                source=event.event_data.get("source"),
-                title=i18n.translate("p115_search_parameter_error"),
-                userid=userid,
-            )
-            return
-
-        try:
-            session = session_manager.get_or_create(
-                event_data, plugin_id=self.__class__.__name__
-            )
-
-            search_keyword = args.strip()
-
-            action = Action(command="search", view="search_list", value=search_keyword)
-
-            immediate_messages = self.action_handler.process(session, action)
-            # 报错，截断后续运行
-            if immediate_messages:
-                for msg in immediate_messages:
-                    self.__send_message(session, text=msg.get("text"), title="错误")
-                return
-
-            # 设置页面
-            if not action.view:
-                logger.error("处理 search 命令失败: 视图为空")
-                return
-            session.go_to(action.view)
-            self._render_and_send(session)
-        except Exception as e:
-            logger.error(f"处理 search 命令失败: {e}", exc_info=True)
-
-    @eventmanager.register(EventType.PluginAction)
     def p115_checkin_manual(self, event: Event):
         """
         远程命令 /p115_checkin 手动 115 签到
@@ -1424,7 +1360,7 @@ class P115StrmHelper(_PluginBase):
                 self.post_message(
                     **context,
                     title="⚠️ 会话已过期",
-                    text="操作已超时。\n请重新发起 `/sh` 命令。",
+                    text="操作已超时，请重新发起交互操作。",
                 )
                 return
 
@@ -1454,7 +1390,7 @@ class P115StrmHelper(_PluginBase):
         self.__send_message(session, render_data=render_data)
 
         # 3. 处理会话结束逻辑
-        if session.view.name in ["subscribe_success", "close"]:
+        if session.view.name == "close":
             # 深复制会话的删除消息数据
             delete_message_data = deepcopy(session.get_delete_message_data())
             session_manager.end(session.session_id)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Dict, List
+from typing import List, Optional
 
 from .framework.schemas import BaseSession, BaseBusiness
 
@@ -9,16 +9,6 @@ class Business(BaseBusiness):
     """
     本插件专属的业务模型
     """
-
-    search_keyword: Optional[str] = None
-
-    search_info: Optional[Dict] = field(default_factory=dict)
-
-    resource_key: Optional[str] = None
-
-    resource_key_list: Optional[List] = None
-
-    resource_info: Optional[Dict] = field(default_factory=dict)
 
     share_recieve_path: Optional[str] = None
     share_recieve_url: Optional[str] = None
@@ -36,6 +26,6 @@ class Session(BaseSession):
     """
 
     # 指定默认视图，用于错误兜底
-    default_view = "search"
+    default_view = "close"
 
     business: Business = field(default_factory=Business)

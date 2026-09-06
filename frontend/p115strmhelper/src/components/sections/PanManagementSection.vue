@@ -170,7 +170,6 @@
             <div class="text-body-2 mb-1"><strong>注意事项：</strong></div>
             <div class="text-caption">
               <div class="mb-1">• 阿里云盘，115网盘分享链接秒传或转存都依赖于网盘整理</div>
-              <div class="mb-1">• TG/Slack资源搜索转存也依赖于网盘整理</div>
               <div>• 当阿里云盘分享秒传未能识别分享媒体信息时，会自动将资源转存到网盘整理未识别目录，后续需要用户手动重命名整理</div>
             </div>
           </v-alert>

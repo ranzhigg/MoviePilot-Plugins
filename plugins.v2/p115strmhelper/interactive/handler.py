@@ -1,9 +1,4 @@
-from typing import List, Dict
-
-import httpx
-
 from app.log import logger
-from app.core.config import settings
 
 from .framework.registry import command_registry, view_registry
 from .framework.callbacks import Action
@@ -32,9 +27,6 @@ class ActionHandler(BaseActionHandler):
         if action.view:
             if view_registry.get_by_name(action.view):
                 session.go_to(action.view)
-                if action.view == "search":
-                    # 如果跳转到 start 视图，重置业务逻辑
-                    session.business = session.business.__class__()
             else:
                 raise ValueError(f"未知视图 '{action.view}'，跳转失败。")
 
@@ -46,9 +38,6 @@ class ActionHandler(BaseActionHandler):
         if action.view:
             if view_registry.get_by_name(action.view):
                 session.go_back(action.view)
-                if action.view == "search":
-                    # 如果返回到 start 视图，重置业务逻辑
-                    session.business = session.business.__class__()
             else:
                 logger.warning(f"未知视图 '{action.view}'，尝试返回失败。")
                 raise ValueError(f"未知视图 '{action.view}'，返回失败。")
@@ -123,7 +112,7 @@ class ActionHandler(BaseActionHandler):
                 f"处理 share_intent_transfer 失败: url={url}, error={e}",
                 exc_info=True,
             )
-            session.go_to("start")
+            session.go_to("close")
             return [
                 {
                     "type": "error_message",
@@ -166,7 +155,7 @@ class ActionHandler(BaseActionHandler):
                 f"处理 share_intent_strm 失败: url={u115}, error={e}",
                 exc_info=True,
             )
-            session.go_to("start")
+            session.go_to("close")
             return [
                 {
                     "type": "error_message",
@@ -202,7 +191,7 @@ class ActionHandler(BaseActionHandler):
                 f"处理 share_recieve 失败: value={action.value}, error={e}",
                 exc_info=True,
             )
-            session.go_to("start")
+            session.go_to("close")
             return [
                 {"type": "error_message", "text": "处理分享转存时发生错误，请重试。"}
             ]
@@ -265,81 +254,8 @@ class ActionHandler(BaseActionHandler):
                 f"处理 offline_download 失败: value={action.value}, error={e}",
                 exc_info=True,
             )
-            session.go_to("start")
+            session.go_to("close")
             return [
                 {"type": "error_message", "text": "处理离线下载时发生错误，请重试。"}
             ]
-        return None
-
-    @command_registry.command(name="search", code="sr")
-    def handle_search(self, session: Session, action: Action):
-        """
-        处理搜索操作
-        """
-        if action.value is None:
-            raise ValueError("搜索关键词不能为空。")
-        search_keyword = action.value.strip()
-        session.business.search_keyword = search_keyword
-
-    @command_registry.command(name="resource", code="rs")
-    def handle_resource(self, session: Session, action: Action):
-        """
-        处理资源操作
-        """
-        if action.value is None:
-            raise ValueError("搜索关键词不能为空。")
-        resource_key = action.value
-        session.business.resource_key = resource_key
-        session.view.refresh = True
-        session.go_to("resource_list")
-
-    @command_registry.command(name="subscribe", code="sb")
-    def handle_select_subscribe(
-        self, session: Session, action: Action
-    ) -> List[Dict] | None:
-        """
-        处理选中资源的操作
-        """
-        try:
-            if action.value is None:
-                raise ValueError("value 不能为空。")
-            # 索引号
-            item_index = int(action.value)
-            # 全部搜索数据
-            search_data = session.business.resource_info.get("data", [])
-
-            if not search_data:
-                raise ValueError("当前没有可用的资源。")
-            if 0 <= item_index < len(search_data):
-                data = search_data[item_index]
-                share_url = (data.get("shareurl") or "").strip()
-                if not share_url:
-                    raise ValueError("没有可用的分享链接")
-                base = configer.get_config("moviepilot_address").rstrip("/")
-                resp = httpx.get(
-                    f"{base}/api/v1/plugin/P115StrmHelper/add_transfer_share",
-                    params={
-                        "apikey": settings.API_TOKEN,
-                        "share_url": share_url,
-                    },
-                    timeout=httpx.Timeout(
-                        connect=30.0,
-                        read=900.0,
-                        write=30.0,
-                        pool=30.0,
-                    ),
-                )
-                if resp.json().get("code") == 0:
-                    session.go_to("subscribe_success")
-                else:
-                    logger.error(f"subscribe 请求失败: {resp.json()}")
-                    session.go_to("subscribe_fail")
-            else:
-                raise IndexError("索引超出范围。")
-        except (ValueError, IndexError, TypeError) as e:
-            logger.error(
-                f"处理 subscribe 失败: value={action.value}, error={e}", exc_info=True
-            )
-            session.go_to("start")
-            return [{"type": "error_message", "text": "选择资源时发生错误，请重试。"}]
         return None

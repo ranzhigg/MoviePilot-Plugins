@@ -4,9 +4,6 @@
       <v-tab value="tab-sync-del" class="sub-tab">
         <v-icon size="small" start>mdi-delete-sweep</v-icon>同步删除
       </v-tab>
-      <v-tab value="tab-tg-search" class="sub-tab">
-        <v-icon size="small" start>mdi-tab-search</v-icon>频道搜索
-      </v-tab>
       <v-tab value="tab-cleanup" class="sub-tab">
         <v-icon size="small" start>mdi-broom</v-icon>定期清理
       </v-tab>
@@ -111,49 +108,6 @@
               <div>•
                 <strong>开启多版本删除：</strong>开启后会将电影和电视剧季删除通过神医返回的路径改为电影单部/电视剧单集删除，从而防止误删其它版本，如果无多版本电影和电视剧季删除的需求，推荐关闭此按钮，提升删除效率
               </div>
-            </div>
-          </v-alert>
-        </v-card-text>
-      </v-window-item>
-      <v-window-item value="tab-tg-search">
-        <v-card-text>
-
-          <!-- 自定义频道搜索配置 -->
-          <v-card variant="outlined">
-            <v-card-item>
-              <v-card-title class="d-flex align-center">
-                <v-icon start>mdi-telegram</v-icon>
-                <span class="text-h6">自定义Telegram频道</span>
-              </v-card-title>
-            </v-card-item>
-            <v-card-text>
-              <div v-for="(channel, index) in tgChannels" :key="index" class="d-flex align-center mb-4">
-                <v-text-field v-model="channel.name" label="频道名称" placeholder="例如：爱影115资源分享频道" density="compact"
-                  variant="outlined" hide-details class="mr-3"></v-text-field>
-                <v-text-field v-model="channel.id" label="频道ID" placeholder="例如：ayzgzf" density="compact"
-                  variant="outlined" hide-details class="mr-3"></v-text-field>
-                <v-btn icon size="small" color="error" variant="tonal" @click="removeTgChannel(index)" title="删除此频道">
-                  <v-icon>mdi-delete-outline</v-icon>
-                </v-btn>
-              </div>
-
-              <!-- 操作按钮组 -->
-              <div class="d-flex ga-2">
-                <v-btn size="small" prepend-icon="mdi-plus-circle-outline" variant="tonal" color="primary"
-                  @click="addTgChannel">
-                  添加频道
-                </v-btn>
-                <v-btn size="small" prepend-icon="mdi-import" variant="tonal" @click="openImportDialog">
-                  一键导入
-                </v-btn>
-              </div>
-            </v-card-text>
-          </v-card>
-
-          <v-alert type="info" variant="tonal" density="compact" class="mt-6" icon="mdi-information">
-            <div class="text-body-2 mb-1"><strong>频道搜索说明（/sh）</strong></div>
-            <div class="text-caption">
-              <div>• 请先配置 <strong>Telegram 频道</strong>，然后通过 <code>/sh</code> 检索资源</div>
             </div>
           </v-alert>
         </v-card-text>
@@ -490,13 +444,9 @@ const otherSubTab = ref('tab-sync-del');
 const config = inject('config');
 const embyMediaservers = inject('embyMediaservers');
 const syncDelLibraryPaths = inject('syncDelLibraryPaths');
-const tgChannels = inject('tgChannels');
 const addPath = inject('addPath');
 const removePath = inject('removePath');
 const openDirSelector = inject('openDirSelector');
-const addTgChannel = inject('addTgChannel');
-const removeTgChannel = inject('removeTgChannel');
-const openImportDialog = inject('openImportDialog');
 const api = inject('api');
 const message = inject('message');
 const PLUGIN_ID = inject('PLUGIN_ID');

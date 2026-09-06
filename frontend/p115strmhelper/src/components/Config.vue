@@ -226,9 +226,6 @@
     <LifeEventCheckDialog :life-event-check-dialog="lifeEventCheckDialog" @check="checkLifeEventStatus"
       @close="closeLifeEventCheckDialog" @copy-debug="copyDebugInfo" />
 
-    <!-- 频道配置导入对话框 -->
-    <ImportChannelDialog :import-dialog="importDialog" @close="closeImportDialog" @confirm="handleConfirmImport" />
-
   </div>
 </template>
 
@@ -247,7 +244,6 @@ import ConfigGeneratorDialog from './dialogs/ConfigGeneratorDialog.vue';
 import LifeEventCheckDialog from './dialogs/LifeEventCheckDialog.vue';
 import ManualTransferDialog from './dialogs/ManualTransferDialog.vue';
 import FullSyncConfirmDialog from './dialogs/FullSyncConfirmDialog.vue';
-import ImportChannelDialog from './dialogs/ImportChannelDialog.vue';
 import StrmSyncSection from './sections/StrmSyncSection.vue';
 import PanManagementSection from './sections/PanManagementSection.vue';
 import OtherFeaturesSection from './sections/OtherFeaturesSection.vue';
@@ -424,7 +420,6 @@ const config = reactive({
   directory_upload_skip_bdmv_stream: true,
   directory_upload_path: [],
   directory_upload_clouddrive2_config: { enabled: false, prefix: '' },
-  tg_search_channels: [],
   same_playback: false,
   plex_app_enabled: false,
   plex_app_plex_url: '',
@@ -537,25 +532,6 @@ const { parseSize, formatBytes } = useSizeFormatter();
 
 const fullSyncConfirmDialog = ref(false);
 const machineId = ref('');
-const tgChannels = ref([{ name: '', id: '' }]);
-
-const addTgChannel = () => {
-  tgChannels.value.push({ name: '', id: '' });
-};
-
-const removeTgChannel = (index) => {
-  tgChannels.value.splice(index, 1);
-  if (tgChannels.value.length === 0) {
-    tgChannels.value.push({ name: '', id: '' });
-  }
-};
-
-const importDialog = reactive({
-  show: false,
-  jsonText: '',
-  error: ''
-});
-
 // 捐赠对话框
 const donateDialog = reactive({
   show: false,
@@ -686,25 +662,6 @@ const loadConfig = async () => {
       directoryUploadPaths.value = (Array.isArray(config.directory_upload_path) && config.directory_upload_path.length > 0)
         ? config.directory_upload_path.map(p => ({ src: p.src ?? '', dest_remote: p.dest_remote ?? '', dest_local: p.dest_local ?? '', dest_strm: p.dest_strm ?? '', delete: !!p.delete }))
         : [{ src: '', dest_remote: '', dest_local: '', dest_strm: '', delete: false }];
-      let parsedChannels = [];
-      if (config.tg_search_channels) {
-        if (Array.isArray(config.tg_search_channels)) {
-          parsedChannels = config.tg_search_channels;
-        }
-        else if (typeof config.tg_search_channels === 'string') {
-          try {
-            parsedChannels = JSON.parse(config.tg_search_channels);
-          } catch (e) {
-            console.error('解析旧的TG频道配置字符串失败:', e);
-            parsedChannels = [];
-          }
-        }
-      }
-      if (Array.isArray(parsedChannels) && parsedChannels.length > 0) {
-        tgChannels.value = parsedChannels;
-      } else {
-        tgChannels.value = [{ name: '', id: '' }];
-      }
       if (data.mediaservers) {
         mediaservers.value = data.mediaservers;
       }
@@ -796,10 +753,6 @@ const saveConfig = async () => {
     config.share_recieve_paths = shareReceivePaths.value.filter(p => p.path?.trim()).map(p => p.path);
     config.offline_download_paths = offlineDownloadPaths.value.filter(p => p.path?.trim()).map(p => p.path);
     config.directory_upload_path = directoryUploadPaths.value.filter(p => p.src?.trim() || p.dest_remote?.trim() || p.dest_local?.trim() || p.dest_strm?.trim());
-    const validChannels = tgChannels.value.filter(
-      c => c.name && c.name.trim() !== '' && c.id && c.id.trim() !== ''
-    );
-    config.tg_search_channels = validChannels;
     // 保存 FUSE STRM 接管规则
     config.fuse_strm_takeover_rules = fuseStrmTakeoverRules.value
       .map(rule => {
@@ -1052,37 +1005,6 @@ const clearR302Cache = async () => {
         message.text = '';
       }
     }, 3000);
-  }
-};
-
-const openImportDialog = () => {
-  importDialog.jsonText = '';
-  importDialog.error = '';
-  importDialog.show = true;
-};
-const closeImportDialog = () => {
-  importDialog.show = false;
-};
-const handleConfirmImport = () => {
-  importDialog.error = '';
-  if (!importDialog.jsonText || !importDialog.jsonText.trim()) {
-    importDialog.error = '输入内容不能为空。';
-    return;
-  }
-  try {
-    const parsedData = JSON.parse(importDialog.jsonText);
-    if (!Array.isArray(parsedData)) throw new Error("数据必须是一个数组。");
-    const isValidStructure = parsedData.every(
-      item => typeof item === 'object' && item !== null && 'name' in item && 'id' in item
-    );
-    if (!isValidStructure) throw new Error("数组中的每个元素都必须是包含 'name' 和 'id' 键的对象。");
-    tgChannels.value = parsedData.length > 0 ? parsedData : [{ name: '', id: '' }];
-    message.text = '频道配置导入成功！';
-    message.type = 'success';
-    closeImportDialog();
-  } catch (e) {
-    importDialog.error = `导入失败: ${e.message}`;
-    console.error("频道导入解析失败:", e);
   }
 };
 
@@ -1370,10 +1292,6 @@ provide('copyDebugInfo', copyDebugInfo);
 // Dialog states
 provide('fullSyncConfirmDialog', fullSyncConfirmDialog);
 provide('lifeEventCheckDialog', lifeEventCheckDialog);
-provide('tgChannels', tgChannels);
-provide('addTgChannel', addTgChannel);
-provide('removeTgChannel', removeTgChannel);
-provide('openImportDialog', openImportDialog);
 provide('machineId', machineId);
 
 </script>
