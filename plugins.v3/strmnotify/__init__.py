@@ -18,9 +18,9 @@ class StrmNotify(_PluginBase):
     """STRM逐条通知"""
 
     plugin_name = "STRM逐条通知"
-    plugin_desc = "监控指定目录中的新 STRM，等待对应 NFO 后发送逐条媒体通知"
+    plugin_desc = "监控指定目录中的新 STRM，等待对应 NFO/封面后发送逐条媒体通知"
     plugin_icon = "https://raw.githubusercontent.com/ranzhigg/MoviePilot-Plugins/main/icons/StrmNotify.svg"
-    plugin_version = "3.0.2"
+    plugin_version = "3.0.3"
     plugin_author = "ranzhigg"
     author_url = "https://github.com/ranzhigg"
     plugin_config_prefix = "strmnotify_"
@@ -99,6 +99,13 @@ class StrmNotify(_PluginBase):
                             continue
                         if budget <= 0:
                             continue
+                        # NFO 可能先落盘、封面稍后才由刮削器补写。启用封面通知时，
+                        # 在同一待处理窗口内继续轮询；到达等待上限仍无封面，
+                        # 才发送一条无图通知，避免永远阻塞队列。
+                        if self._config.get("image", True) and not info["image"]:
+                            if now - started < wait:
+                                continue
+                            logger.info("STRM逐条通知：等待封面超时，发送无封面通知")
                         lines = [info["title"]]
                         for field, label in [("year", "年份"), ("actors", "演员"), ("tags", "标签")]:
                             if self._config.get(field, True) and info[field]:
@@ -130,13 +137,13 @@ class StrmNotify(_PluginBase):
                            ("tags", "显示标签"), ("filename", "显示文件名")]:
             fields.append({"component": "VSwitch", "props": {"model": key, "label": label}})
         fields.append({"component": "VTextarea", "props": {"model": "paths", "label": "监控目录（MP 容器内绝对路径，每行一个）"}})
-        for key, label in [("interval", "扫描间隔（秒，10–3600）"), ("wait", "等待 NFO（秒，10–86400）"), ("batch", "每轮最多通知数（1–100）")]:
+        for key, label in [("interval", "扫描间隔（秒，10–3600）"), ("wait", "等待 NFO/封面（秒，10–86400）"), ("batch", "每轮最多通知数（1–100）")]:
             fields.append({"component": "VTextField", "props": {"model": key, "label": label, "type": "number"}})
         fields.append({"component": "VSelect", "props": {"model": "channel", "label": "通知渠道",
                        "items": [{"title": "跟随 MP 通知配置", "value": ""}] +
                                 [{"title": x.name, "value": x.value} for x in MessageChannel]}})
         fields.append({"component": "VAlert", "props": {"type": "info", "variant": "tonal"},
-                       "content": [{"component": "span", "text": "首次扫描只记录存量文件；重写已有路径不重复通知。匹配同名 NFO，单 STRM 目录可使用 movie.nfo。启用前请停用其他插件的同类逐条通知。通知表示 STRM 与 NFO 已就绪，不代表媒体服务器完成扫描。"}]})
+                       "content": [{"component": "span", "text": "首次扫描只记录存量文件；重写已有路径不重复通知。匹配同名 NFO，单 STRM 目录可使用 movie.nfo。启用封面后，NFO 有标题但没有远程封面时会继续轮询，等待超时才发送无图通知。启用前请停用其他插件的同类逐条通知。通知表示 STRM 与 NFO 已就绪，不代表媒体服务器完成扫描。"}]})
         return [{"component": "VForm", "content": fields}], {
             "enabled": False, "paths": "", "interval": 30, "wait": 120, "batch": 10,
             "channel": "", "image": True, "year": True, "actors": True, "tags": True, "filename": True}
@@ -175,12 +182,12 @@ class StrmNotify(_PluginBase):
             content.append(line("请点右下角齿轮，设置监控目录并启用插件"))
         content.extend([
             {"component": "h3", "props": {"class": "my-3"}, "text": "通知设置"},
-            line(f"等待 NFO：{wait} 秒 · 每轮最多 {batch} 条"),
+            line(f"等待 NFO/封面：{wait} 秒 · 每轮最多 {batch} 条"),
             line(f"通知渠道：{config.get('channel') or '跟随 MP 通知配置'}"),
             line("显示内容：" + ("、".join(label for key, label in [("image", "封面"), ("year", "年份"),
                  ("actors", "演员"), ("tags", "标签"), ("filename", "文件名")] if config.get(key, True)) or "仅标题")),
             {"component": "VAlert", "props": {"type": "info", "variant": "tonal", "class": "mt-4"},
-             "text": "首次扫描只记录存量文件，新增 STRM 与 NFO 就绪后才通知。以上数量来自最近保存的扫描记录，不代表媒体服务器已入库。修改配置请点右下角齿轮，重新打开此页可刷新数据。"},
+             "text": "首次扫描只记录存量文件，新增 STRM 与 NFO 就绪后才通知；封面缺失时会在等待窗口内继续轮询，超时后发送无图通知。以上数量来自最近保存的扫描记录，不代表媒体服务器已入库。修改配置请点右下角齿轮，重新打开此页可刷新数据。"},
         ])
         return [{"component": "VCardText", "content": content}]
 

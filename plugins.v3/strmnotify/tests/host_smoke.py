@@ -29,9 +29,14 @@ with TemporaryDirectory() as directory:
  plugin.poll();assert plugin.save_data.call_count==0
  for name in ['one','two']:
   (root/f'{name}.strm').touch()
-  p=root/f'{name}.nfo';p.write_text(f'<movie><title>{name}</title></movie>');os.utime(p,(0,0))
+  cover = '<thumb>https://example.invalid/one.jpg</thumb>' if name == 'one' else ''
+  p=root/f'{name}.nfo';p.write_text(f'<movie><title>{name}</title>{cover}</movie>');os.utime(p,(0,0))
  plugin.poll();assert plugin.post_message.call_count==1
- plugin.poll();assert plugin.post_message.call_count==2
+ assert str(root/'two.strm') in storage['state'][str(root)]['pending']
+ with patch.object(module, 'time', return_value=module.time()+121):
+  plugin.poll()
+ assert plugin.post_message.call_count==2
+ assert any(call.kwargs.get('image') is None for call in plugin.post_message.call_args_list)
  plugin.init_plugin({'enabled':True,'paths':str(root)})
  plugin.poll();assert plugin.post_message.call_count==2
  plugin.save_data.reset_mock()
@@ -45,7 +50,7 @@ with TemporaryDirectory() as directory:
  assert plugin.save_data.call_count==1
  assert not storage['state'][str(root)]['pending']
  retry=root/'retry.strm';retry.touch()
- retry_nfo=retry.with_suffix('.nfo');retry_nfo.write_text('<movie><title>retry</title></movie>');os.utime(retry_nfo,(0,0))
+ retry_nfo=retry.with_suffix('.nfo');retry_nfo.write_text('<movie><title>retry</title><thumb>https://example.invalid/retry.jpg</thumb></movie>');os.utime(retry_nfo,(0,0))
  plugin.post_message.side_effect=RuntimeError('simulated failure')
  plugin.poll()
  assert str(retry) in storage['state'][str(root)]['pending']
