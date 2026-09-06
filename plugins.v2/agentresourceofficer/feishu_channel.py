@@ -299,10 +299,6 @@ class FeishuChannel:
             "盘搜=/pansou_search\n"
             "ps=/pansou_search\n"
             "1=/pansou_search\n"
-            "影巢搜索=/smart_entry\n"
-            "影巢=/smart_entry\n"
-            "yc=/smart_entry\n"
-            "2=/smart_entry\n"
             "转存=/smart_entry\n"
             "115转存=/smart_entry\n"
             "夸克转存=/smart_entry\n"
@@ -320,13 +316,6 @@ class FeishuChannel:
             "115任务=/smart_entry\n"
             "继续115任务=/smart_entry\n"
             "取消115任务=/smart_entry\n"
-            "影巢签到=/smart_entry\n"
-            "影巢普通签到=/smart_entry\n"
-            "普通签到=/smart_entry\n"
-            "签到=/smart_entry\n"
-            "赌狗签到=/smart_entry\n"
-            "签到日志=/smart_entry\n"
-            "影巢签到日志=/smart_entry\n"
             "选择=/smart_pick\n"
             "详情=/smart_pick\n"
             "审查=/smart_pick\n"
@@ -606,7 +595,7 @@ class FeishuChannel:
                 self.reply_text(
                     chat_id,
                     open_id,
-                    "“订阅并搜索 片名”旧命令已取消。\n请改用：订阅 片名\n如需立即看资源，再手动发 MP搜索 / 盘搜搜索 / 影巢搜索。",
+                    "“订阅并搜索 片名”旧命令已取消。\n请改用：订阅 片名\n如需立即看资源，再手动发 MP搜索 / 盘搜搜索。",
                 )
                 return True
             self.reply_text(chat_id, open_id, f"正在订阅：{arg}")
@@ -1780,16 +1769,14 @@ class FeishuChannel:
         return (
             "快捷菜单\n"
             "1. 盘搜搜索 片名\n"
-            "2. 影巢搜索 片名\n"
-            "3. 搜索 片名\n"
-            "4. MP搜索 片名 / PT搜索 片名\n"
-            "5. 转存 片名（默认 115）\n"
-            "6. 夸克转存 片名\n"
-            "7. 下载 片名\n"
-            "8. 订阅 片名\n"
-            "9. 选择 序号 / 详情 序号 / n\n"
-            "10. 115登录 / 115状态 / 115任务\n"
-            "11. 影巢签到 / 影巢签到日志"
+            "2. 搜索 片名\n"
+            "3. MP搜索 片名 / PT搜索 片名\n"
+            "4. 转存 片名（默认 115）\n"
+            "5. 夸克转存 片名\n"
+            "6. 下载 片名\n"
+            "7. 订阅 片名\n"
+            "8. 选择 序号 / 详情 序号 / n\n"
+            "9. 115登录 / 115状态 / 115任务"
         )
 
     @staticmethod

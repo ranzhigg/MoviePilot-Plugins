@@ -23,11 +23,6 @@ const config = ref({})
 const message = reactive({ text: '', type: 'info' })
 const showCookie = ref(false)
 const showFeishuSecret = ref(false)
-const showHdhiveApiKey = ref(false)
-const showHdhiveAccessToken = ref(false)
-const showHdhiveRefreshToken = ref(false)
-const showHdhiveCookie = ref(false)
-const showHdhivePassword = ref(false)
 const saving = ref(false)
 const healthLoading = ref(false)
 const health = ref(null)
@@ -319,7 +314,7 @@ onBeforeUnmount(clearQrTimer)
 
       <div class="aro-intro text-body-2 mb-3">
         <VIcon icon="mdi-rocket-launch-outline" size="small" color="primary" class="me-1" />
-        <span>快速开始：先启用插件并配置 MP/PT，再按需开启影巢、盘搜与飞书入口；完整说明见</span>
+        <span>快速开始：先启用插件并配置 MP/PT，再按需开启盘搜与飞书入口；完整说明见</span>
         <a href="https://github.com/liuyuexi1987/MoviePilot-Plugins" target="_blank" rel="noopener" class="text-primary text-decoration-none font-weight-medium">主页文档</a>。
       </div>
 
@@ -423,138 +418,6 @@ onBeforeUnmount(clearQrTimer)
                 </template>
                 <template #append>
                   <VIcon icon="mdi-qrcode-scan" :color="config.p115_cookie ? 'success' : 'primary'" title="扫码获取或更新 115 Cookie" @click="openQrDialog" />
-                </template>
-              </VTextField>
-            </VCol>
-          </VRow>
-        </VCardText>
-      </VCard>
-
-      <VCard variant="outlined" class="aro-card mb-3 rounded-lg">
-        <VCardItem class="aro-card-head">
-          <template #prepend>
-            <VIcon icon="mdi-honeycomb-outline" color="primary" />
-          </template>
-          <VCardTitle class="text-subtitle-1">影巢资源</VCardTitle>
-          <VCardSubtitle class="text-caption">资源搜索 / 解锁 / 转存；积分上限填 0 不限制</VCardSubtitle>
-          <template #append>
-            <VChip :color="enableChip(config.hdhive_resource_enabled).color" size="small" variant="tonal">{{ enableChip(config.hdhive_resource_enabled).text }}</VChip>
-          </template>
-        </VCardItem>
-        <VCardText class="pt-2">
-          <VRow dense>
-            <VCol cols="12" sm="6" md="3">
-              <VSwitch v-model="config.hdhive_resource_enabled" label="启用搜索/解锁" color="success" density="compact" hide-details />
-            </VCol>
-            <VCol cols="12" sm="6" md="3">
-              <VSelect
-                v-model="config.hdhive_resource_mode"
-                :items="[
-                  { title: '网页方式', value: 'browser' },
-                  { title: 'OpenAPI', value: 'openapi' },
-                  { title: '自动(网页优先)', value: 'auto' },
-                ]"
-                item-title="title"
-                item-value="value"
-                label="资源方式"
-                variant="outlined"
-                density="compact"
-                hide-details="auto"
-              />
-            </VCol>
-            <VCol cols="6" sm="3" md="3">
-              <VTextField v-model="config.hdhive_max_unlock_points" label="积分上限" type="number" placeholder="20" variant="outlined" density="compact" hide-details="auto" />
-            </VCol>
-            <VCol cols="6" sm="3" md="3">
-              <VTextField v-model="config.hdhive_candidate_page_size" label="候选页大小" type="number" placeholder="10" variant="outlined" density="compact" hide-details="auto" />
-            </VCol>
-            <VCol cols="6" sm="3" md="3">
-              <VTextField v-model="config.hdhive_timeout" label="超时(秒)" type="number" variant="outlined" density="compact" hide-details="auto" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VTextField v-model="config.hdhive_base_url" label="影巢地址" variant="outlined" density="compact" hide-details="auto" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VTextField v-model="config.hdhive_default_path" label="影巢默认转存目录" variant="outlined" density="compact" hide-details="auto" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VTextField v-model="config.hdhive_api_key" :type="showHdhiveApiKey ? 'text' : 'password'" label="影巢 API Key" variant="outlined" density="compact" hide-details="auto">
-                <template #append-inner>
-                  <VIcon :icon="showHdhiveApiKey ? 'mdi-eye-off' : 'mdi-eye'" class="me-2" size="small" @click="showHdhiveApiKey = !showHdhiveApiKey" />
-                  <VIcon icon="mdi-content-copy" size="small" :disabled="!config.hdhive_api_key" @click="copyText(config.hdhive_api_key, '影巢 API Key')" />
-                </template>
-              </VTextField>
-            </VCol>
-            <VCol cols="12" md="6">
-              <VTextField v-model="config.hdhive_openapi_user_token" :type="showHdhiveAccessToken ? 'text' : 'password'" label="OpenAPI Access Token" variant="outlined" density="compact" hide-details="auto">
-                <template #append-inner>
-                  <VIcon :icon="showHdhiveAccessToken ? 'mdi-eye-off' : 'mdi-eye'" class="me-2" size="small" @click="showHdhiveAccessToken = !showHdhiveAccessToken" />
-                  <VIcon icon="mdi-content-copy" size="small" :disabled="!config.hdhive_openapi_user_token" @click="copyText(config.hdhive_openapi_user_token, '影巢 Access Token')" />
-                </template>
-              </VTextField>
-            </VCol>
-            <VCol cols="12">
-              <VTextField v-model="config.hdhive_openapi_refresh_token" :type="showHdhiveRefreshToken ? 'text' : 'password'" label="OpenAPI Refresh Token（可选）" variant="outlined" density="compact" hide-details="auto">
-                <template #append-inner>
-                  <VIcon :icon="showHdhiveRefreshToken ? 'mdi-eye-off' : 'mdi-eye'" class="me-2" size="small" @click="showHdhiveRefreshToken = !showHdhiveRefreshToken" />
-                  <VIcon icon="mdi-content-copy" size="small" :disabled="!config.hdhive_openapi_refresh_token" @click="copyText(config.hdhive_openapi_refresh_token, '影巢 Refresh Token')" />
-                </template>
-              </VTextField>
-            </VCol>
-          </VRow>
-        </VCardText>
-      </VCard>
-
-      <VCard variant="outlined" class="aro-card mb-3 rounded-lg">
-        <VCardItem class="aro-card-head">
-          <template #prepend>
-            <VIcon icon="mdi-calendar-check-outline" color="primary" />
-          </template>
-          <VCardTitle class="text-subtitle-1">影巢签到</VCardTitle>
-          <VCardSubtitle class="text-caption">OpenAPI 优先，网页 Cookie 兜底，按 Cron 自动签到</VCardSubtitle>
-          <template #append>
-            <VChip :color="enableChip(config.hdhive_checkin_enabled).color" size="small" variant="tonal">{{ enableChip(config.hdhive_checkin_enabled).text }}</VChip>
-          </template>
-        </VCardItem>
-        <VCardText class="pt-2">
-          <VRow dense>
-            <VCol cols="6" md="3">
-              <VSwitch v-model="config.hdhive_checkin_enabled" label="启用签到" color="success" density="compact" hide-details />
-            </VCol>
-            <VCol cols="6" md="3">
-              <VSwitch v-model="config.hdhive_checkin_gambler_mode" label="默认赌狗签到" color="warning" density="compact" hide-details />
-            </VCol>
-            <VCol cols="6" md="3">
-              <VSwitch v-model="config.hdhive_checkin_once" label="保存后立即运行" color="primary" density="compact" hide-details />
-            </VCol>
-            <VCol cols="6" md="3">
-              <VSwitch v-model="config.hdhive_checkin_auto_login" label="自动刷新 Cookie" color="primary" density="compact" hide-details />
-            </VCol>
-            <VCol cols="12" sm="4" md="4">
-              <VTextField v-model="config.hdhive_checkin_cron" label="签到 Cron" placeholder="0 8 * * *" variant="outlined" density="compact" hide-details="auto" />
-            </VCol>
-            <VCol cols="12" sm="4" md="4">
-              <VTextField v-model="config.hdhive_checkin_username" label="影巢用户名/邮箱" variant="outlined" density="compact" hide-details="auto" />
-            </VCol>
-            <VCol cols="12" sm="4" md="4">
-              <VTextField v-model="config.hdhive_checkin_password" :type="showHdhivePassword ? 'text' : 'password'" label="影巢密码" variant="outlined" density="compact" hide-details="auto">
-                <template #append-inner>
-                  <VIcon :icon="showHdhivePassword ? 'mdi-eye-off' : 'mdi-eye'" size="small" @click="showHdhivePassword = !showHdhivePassword" />
-                </template>
-              </VTextField>
-            </VCol>
-            <VCol cols="12">
-              <VTextField
-                v-model="config.hdhive_checkin_cookie"
-                :type="showHdhiveCookie ? 'text' : 'password'"
-                label="影巢网页 Cookie（非 Premium 兜底）"
-                variant="outlined"
-                density="compact"
-                hide-details="auto"
-              >
-                <template #append-inner>
-                  <VIcon :icon="showHdhiveCookie ? 'mdi-eye-off' : 'mdi-eye'" class="me-2" size="small" @click="showHdhiveCookie = !showHdhiveCookie" />
-                  <VIcon icon="mdi-content-copy" size="small" :disabled="!config.hdhive_checkin_cookie" @click="copyText(config.hdhive_checkin_cookie, '影巢 Cookie')" />
                 </template>
               </VTextField>
             </VCol>

@@ -89,11 +89,6 @@ const config = ref({});
 const message = reactive({ text: '', type: 'info' });
 const showCookie = ref(false);
 const showFeishuSecret = ref(false);
-const showHdhiveApiKey = ref(false);
-const showHdhiveAccessToken = ref(false);
-const showHdhiveRefreshToken = ref(false);
-const showHdhiveCookie = ref(false);
-const showHdhivePassword = ref(false);
 const saving = ref(false);
 const healthLoading = ref(false);
 const health = ref(null);
@@ -400,7 +395,7 @@ return (_ctx, _cache) => {
           color: "primary",
           class: "ms-3 me-2"
         }),
-        _cache[55] || (_cache[55] = _createElementVNode("div", { class: "text-h6" }, "Agent影视助手配置", -1)),
+        _cache[28] || (_cache[28] = _createElementVNode("div", { class: "text-h6" }, "Agent影视助手配置", -1)),
         _createVNode(_component_VSpacer),
         _createVNode(_component_VBtn, {
           icon: "mdi-refresh",
@@ -451,14 +446,14 @@ return (_ctx, _cache) => {
             color: "primary",
             class: "me-1"
           }),
-          _cache[56] || (_cache[56] = _createElementVNode("span", null, "快速开始：先启用插件并配置 MP/PT，再按需开启影巢、盘搜与飞书入口；完整说明见", -1)),
-          _cache[57] || (_cache[57] = _createElementVNode("a", {
+          _cache[29] || (_cache[29] = _createElementVNode("span", null, "快速开始：先启用插件并配置 MP/PT，再按需开启盘搜与飞书入口；完整说明见", -1)),
+          _cache[30] || (_cache[30] = _createElementVNode("a", {
             href: "https://github.com/liuyuexi1987/MoviePilot-Plugins",
             target: "_blank",
             rel: "noopener",
             class: "text-primary text-decoration-none font-weight-medium"
           }, "主页文档", -1)),
-          _cache[58] || (_cache[58] = _createTextVNode("。 ", -1))
+          _cache[31] || (_cache[31] = _createTextVNode("。 ", -1))
         ]),
         _createVNode(_component_VCard, {
           variant: "outlined",
@@ -486,13 +481,13 @@ return (_ctx, _cache) => {
               ]),
               default: _withCtx(() => [
                 _createVNode(_component_VCardTitle, { class: "text-subtitle-1" }, {
-                  default: _withCtx(() => [...(_cache[59] || (_cache[59] = [
+                  default: _withCtx(() => [...(_cache[32] || (_cache[32] = [
                     _createTextVNode("基础设置", -1)
                   ]))]),
                   _: 1
                 }),
                 _createVNode(_component_VCardSubtitle, { class: "text-caption" }, {
-                  default: _withCtx(() => [...(_cache[60] || (_cache[60] = [
+                  default: _withCtx(() => [...(_cache[33] || (_cache[33] = [
                     _createTextVNode("启用插件、通知与调试开关", -1)
                   ]))]),
                   _: 1
@@ -587,13 +582,13 @@ return (_ctx, _cache) => {
               ]),
               default: _withCtx(() => [
                 _createVNode(_component_VCardTitle, { class: "text-subtitle-1" }, {
-                  default: _withCtx(() => [...(_cache[61] || (_cache[61] = [
+                  default: _withCtx(() => [...(_cache[34] || (_cache[34] = [
                     _createTextVNode("MP/PT 策略", -1)
                   ]))]),
                   _: 1
                 }),
                 _createVNode(_component_VCardSubtitle, { class: "text-caption" }, {
-                  default: _withCtx(() => [...(_cache[62] || (_cache[62] = [
+                  default: _withCtx(() => [...(_cache[35] || (_cache[35] = [
                     _createTextVNode("首选主线：原生搜索/订阅/下载；评分仅影响未保存偏好的新会话", -1)
                   ]))]),
                   _: 1
@@ -749,13 +744,13 @@ return (_ctx, _cache) => {
               ]),
               default: _withCtx(() => [
                 _createVNode(_component_VCardTitle, { class: "text-subtitle-1" }, {
-                  default: _withCtx(() => [...(_cache[63] || (_cache[63] = [
+                  default: _withCtx(() => [...(_cache[36] || (_cache[36] = [
                     _createTextVNode("115 扫码登录", -1)
                   ]))]),
                   _: 1
                 }),
                 _createVNode(_component_VCardSubtitle, { class: "text-caption" }, {
-                  default: _withCtx(() => [...(_cache[64] || (_cache[64] = [
+                  default: _withCtx(() => [...(_cache[37] || (_cache[37] = [
                     _createTextVNode("扫码写入 Cookie，手填仅作兜底", -1)
                   ]))]),
                   _: 1
@@ -881,493 +876,6 @@ return (_ctx, _cache) => {
             _createVNode(_component_VCardItem, { class: "aro-card-head" }, {
               prepend: _withCtx(() => [
                 _createVNode(_component_VIcon, {
-                  icon: "mdi-honeycomb-outline",
-                  color: "primary"
-                })
-              ]),
-              append: _withCtx(() => [
-                _createVNode(_component_VChip, {
-                  color: enableChip(config.value.hdhive_resource_enabled).color,
-                  size: "small",
-                  variant: "tonal"
-                }, {
-                  default: _withCtx(() => [
-                    _createTextVNode(_toDisplayString(enableChip(config.value.hdhive_resource_enabled).text), 1)
-                  ]),
-                  _: 1
-                }, 8, ["color"])
-              ]),
-              default: _withCtx(() => [
-                _createVNode(_component_VCardTitle, { class: "text-subtitle-1" }, {
-                  default: _withCtx(() => [...(_cache[65] || (_cache[65] = [
-                    _createTextVNode("影巢资源", -1)
-                  ]))]),
-                  _: 1
-                }),
-                _createVNode(_component_VCardSubtitle, { class: "text-caption" }, {
-                  default: _withCtx(() => [...(_cache[66] || (_cache[66] = [
-                    _createTextVNode("资源搜索 / 解锁 / 转存；积分上限填 0 不限制", -1)
-                  ]))]),
-                  _: 1
-                })
-              ]),
-              _: 1
-            }),
-            _createVNode(_component_VCardText, { class: "pt-2" }, {
-              default: _withCtx(() => [
-                _createVNode(_component_VRow, { dense: "" }, {
-                  default: _withCtx(() => [
-                    _createVNode(_component_VCol, {
-                      cols: "12",
-                      sm: "6",
-                      md: "3"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VSwitch, {
-                          modelValue: config.value.hdhive_resource_enabled,
-                          "onUpdate:modelValue": _cache[15] || (_cache[15] = $event => ((config.value.hdhive_resource_enabled) = $event)),
-                          label: "启用搜索/解锁",
-                          color: "success",
-                          density: "compact",
-                          "hide-details": ""
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "12",
-                      sm: "6",
-                      md: "3"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VSelect, {
-                          modelValue: config.value.hdhive_resource_mode,
-                          "onUpdate:modelValue": _cache[16] || (_cache[16] = $event => ((config.value.hdhive_resource_mode) = $event)),
-                          items: [
-                  { title: '网页方式', value: 'browser' },
-                  { title: 'OpenAPI', value: 'openapi' },
-                  { title: '自动(网页优先)', value: 'auto' },
-                ],
-                          "item-title": "title",
-                          "item-value": "value",
-                          label: "资源方式",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "6",
-                      sm: "3",
-                      md: "3"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_max_unlock_points,
-                          "onUpdate:modelValue": _cache[17] || (_cache[17] = $event => ((config.value.hdhive_max_unlock_points) = $event)),
-                          label: "积分上限",
-                          type: "number",
-                          placeholder: "20",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "6",
-                      sm: "3",
-                      md: "3"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_candidate_page_size,
-                          "onUpdate:modelValue": _cache[18] || (_cache[18] = $event => ((config.value.hdhive_candidate_page_size) = $event)),
-                          label: "候选页大小",
-                          type: "number",
-                          placeholder: "10",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "6",
-                      sm: "3",
-                      md: "3"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_timeout,
-                          "onUpdate:modelValue": _cache[19] || (_cache[19] = $event => ((config.value.hdhive_timeout) = $event)),
-                          label: "超时(秒)",
-                          type: "number",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "12",
-                      md: "6"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_base_url,
-                          "onUpdate:modelValue": _cache[20] || (_cache[20] = $event => ((config.value.hdhive_base_url) = $event)),
-                          label: "影巢地址",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "12",
-                      md: "6"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_default_path,
-                          "onUpdate:modelValue": _cache[21] || (_cache[21] = $event => ((config.value.hdhive_default_path) = $event)),
-                          label: "影巢默认转存目录",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "12",
-                      md: "6"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_api_key,
-                          "onUpdate:modelValue": _cache[24] || (_cache[24] = $event => ((config.value.hdhive_api_key) = $event)),
-                          type: showHdhiveApiKey.value ? 'text' : 'password',
-                          label: "影巢 API Key",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, {
-                          "append-inner": _withCtx(() => [
-                            _createVNode(_component_VIcon, {
-                              icon: showHdhiveApiKey.value ? 'mdi-eye-off' : 'mdi-eye',
-                              class: "me-2",
-                              size: "small",
-                              onClick: _cache[22] || (_cache[22] = $event => (showHdhiveApiKey.value = !showHdhiveApiKey.value))
-                            }, null, 8, ["icon"]),
-                            _createVNode(_component_VIcon, {
-                              icon: "mdi-content-copy",
-                              size: "small",
-                              disabled: !config.value.hdhive_api_key,
-                              onClick: _cache[23] || (_cache[23] = $event => (copyText(config.value.hdhive_api_key, '影巢 API Key')))
-                            }, null, 8, ["disabled"])
-                          ]),
-                          _: 1
-                        }, 8, ["modelValue", "type"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "12",
-                      md: "6"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_openapi_user_token,
-                          "onUpdate:modelValue": _cache[27] || (_cache[27] = $event => ((config.value.hdhive_openapi_user_token) = $event)),
-                          type: showHdhiveAccessToken.value ? 'text' : 'password',
-                          label: "OpenAPI Access Token",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, {
-                          "append-inner": _withCtx(() => [
-                            _createVNode(_component_VIcon, {
-                              icon: showHdhiveAccessToken.value ? 'mdi-eye-off' : 'mdi-eye',
-                              class: "me-2",
-                              size: "small",
-                              onClick: _cache[25] || (_cache[25] = $event => (showHdhiveAccessToken.value = !showHdhiveAccessToken.value))
-                            }, null, 8, ["icon"]),
-                            _createVNode(_component_VIcon, {
-                              icon: "mdi-content-copy",
-                              size: "small",
-                              disabled: !config.value.hdhive_openapi_user_token,
-                              onClick: _cache[26] || (_cache[26] = $event => (copyText(config.value.hdhive_openapi_user_token, '影巢 Access Token')))
-                            }, null, 8, ["disabled"])
-                          ]),
-                          _: 1
-                        }, 8, ["modelValue", "type"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, { cols: "12" }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_openapi_refresh_token,
-                          "onUpdate:modelValue": _cache[30] || (_cache[30] = $event => ((config.value.hdhive_openapi_refresh_token) = $event)),
-                          type: showHdhiveRefreshToken.value ? 'text' : 'password',
-                          label: "OpenAPI Refresh Token（可选）",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, {
-                          "append-inner": _withCtx(() => [
-                            _createVNode(_component_VIcon, {
-                              icon: showHdhiveRefreshToken.value ? 'mdi-eye-off' : 'mdi-eye',
-                              class: "me-2",
-                              size: "small",
-                              onClick: _cache[28] || (_cache[28] = $event => (showHdhiveRefreshToken.value = !showHdhiveRefreshToken.value))
-                            }, null, 8, ["icon"]),
-                            _createVNode(_component_VIcon, {
-                              icon: "mdi-content-copy",
-                              size: "small",
-                              disabled: !config.value.hdhive_openapi_refresh_token,
-                              onClick: _cache[29] || (_cache[29] = $event => (copyText(config.value.hdhive_openapi_refresh_token, '影巢 Refresh Token')))
-                            }, null, 8, ["disabled"])
-                          ]),
-                          _: 1
-                        }, 8, ["modelValue", "type"])
-                      ]),
-                      _: 1
-                    })
-                  ]),
-                  _: 1
-                })
-              ]),
-              _: 1
-            })
-          ]),
-          _: 1
-        }),
-        _createVNode(_component_VCard, {
-          variant: "outlined",
-          class: "aro-card mb-3 rounded-lg"
-        }, {
-          default: _withCtx(() => [
-            _createVNode(_component_VCardItem, { class: "aro-card-head" }, {
-              prepend: _withCtx(() => [
-                _createVNode(_component_VIcon, {
-                  icon: "mdi-calendar-check-outline",
-                  color: "primary"
-                })
-              ]),
-              append: _withCtx(() => [
-                _createVNode(_component_VChip, {
-                  color: enableChip(config.value.hdhive_checkin_enabled).color,
-                  size: "small",
-                  variant: "tonal"
-                }, {
-                  default: _withCtx(() => [
-                    _createTextVNode(_toDisplayString(enableChip(config.value.hdhive_checkin_enabled).text), 1)
-                  ]),
-                  _: 1
-                }, 8, ["color"])
-              ]),
-              default: _withCtx(() => [
-                _createVNode(_component_VCardTitle, { class: "text-subtitle-1" }, {
-                  default: _withCtx(() => [...(_cache[67] || (_cache[67] = [
-                    _createTextVNode("影巢签到", -1)
-                  ]))]),
-                  _: 1
-                }),
-                _createVNode(_component_VCardSubtitle, { class: "text-caption" }, {
-                  default: _withCtx(() => [...(_cache[68] || (_cache[68] = [
-                    _createTextVNode("OpenAPI 优先，网页 Cookie 兜底，按 Cron 自动签到", -1)
-                  ]))]),
-                  _: 1
-                })
-              ]),
-              _: 1
-            }),
-            _createVNode(_component_VCardText, { class: "pt-2" }, {
-              default: _withCtx(() => [
-                _createVNode(_component_VRow, { dense: "" }, {
-                  default: _withCtx(() => [
-                    _createVNode(_component_VCol, {
-                      cols: "6",
-                      md: "3"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VSwitch, {
-                          modelValue: config.value.hdhive_checkin_enabled,
-                          "onUpdate:modelValue": _cache[31] || (_cache[31] = $event => ((config.value.hdhive_checkin_enabled) = $event)),
-                          label: "启用签到",
-                          color: "success",
-                          density: "compact",
-                          "hide-details": ""
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "6",
-                      md: "3"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VSwitch, {
-                          modelValue: config.value.hdhive_checkin_gambler_mode,
-                          "onUpdate:modelValue": _cache[32] || (_cache[32] = $event => ((config.value.hdhive_checkin_gambler_mode) = $event)),
-                          label: "默认赌狗签到",
-                          color: "warning",
-                          density: "compact",
-                          "hide-details": ""
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "6",
-                      md: "3"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VSwitch, {
-                          modelValue: config.value.hdhive_checkin_once,
-                          "onUpdate:modelValue": _cache[33] || (_cache[33] = $event => ((config.value.hdhive_checkin_once) = $event)),
-                          label: "保存后立即运行",
-                          color: "primary",
-                          density: "compact",
-                          "hide-details": ""
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "6",
-                      md: "3"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VSwitch, {
-                          modelValue: config.value.hdhive_checkin_auto_login,
-                          "onUpdate:modelValue": _cache[34] || (_cache[34] = $event => ((config.value.hdhive_checkin_auto_login) = $event)),
-                          label: "自动刷新 Cookie",
-                          color: "primary",
-                          density: "compact",
-                          "hide-details": ""
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "12",
-                      sm: "4",
-                      md: "4"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_checkin_cron,
-                          "onUpdate:modelValue": _cache[35] || (_cache[35] = $event => ((config.value.hdhive_checkin_cron) = $event)),
-                          label: "签到 Cron",
-                          placeholder: "0 8 * * *",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "12",
-                      sm: "4",
-                      md: "4"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_checkin_username,
-                          "onUpdate:modelValue": _cache[36] || (_cache[36] = $event => ((config.value.hdhive_checkin_username) = $event)),
-                          label: "影巢用户名/邮箱",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, {
-                      cols: "12",
-                      sm: "4",
-                      md: "4"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_checkin_password,
-                          "onUpdate:modelValue": _cache[38] || (_cache[38] = $event => ((config.value.hdhive_checkin_password) = $event)),
-                          type: showHdhivePassword.value ? 'text' : 'password',
-                          label: "影巢密码",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, {
-                          "append-inner": _withCtx(() => [
-                            _createVNode(_component_VIcon, {
-                              icon: showHdhivePassword.value ? 'mdi-eye-off' : 'mdi-eye',
-                              size: "small",
-                              onClick: _cache[37] || (_cache[37] = $event => (showHdhivePassword.value = !showHdhivePassword.value))
-                            }, null, 8, ["icon"])
-                          ]),
-                          _: 1
-                        }, 8, ["modelValue", "type"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_VCol, { cols: "12" }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_VTextField, {
-                          modelValue: config.value.hdhive_checkin_cookie,
-                          "onUpdate:modelValue": _cache[41] || (_cache[41] = $event => ((config.value.hdhive_checkin_cookie) = $event)),
-                          type: showHdhiveCookie.value ? 'text' : 'password',
-                          label: "影巢网页 Cookie（非 Premium 兜底）",
-                          variant: "outlined",
-                          density: "compact",
-                          "hide-details": "auto"
-                        }, {
-                          "append-inner": _withCtx(() => [
-                            _createVNode(_component_VIcon, {
-                              icon: showHdhiveCookie.value ? 'mdi-eye-off' : 'mdi-eye',
-                              class: "me-2",
-                              size: "small",
-                              onClick: _cache[39] || (_cache[39] = $event => (showHdhiveCookie.value = !showHdhiveCookie.value))
-                            }, null, 8, ["icon"]),
-                            _createVNode(_component_VIcon, {
-                              icon: "mdi-content-copy",
-                              size: "small",
-                              disabled: !config.value.hdhive_checkin_cookie,
-                              onClick: _cache[40] || (_cache[40] = $event => (copyText(config.value.hdhive_checkin_cookie, '影巢 Cookie')))
-                            }, null, 8, ["disabled"])
-                          ]),
-                          _: 1
-                        }, 8, ["modelValue", "type"])
-                      ]),
-                      _: 1
-                    })
-                  ]),
-                  _: 1
-                })
-              ]),
-              _: 1
-            })
-          ]),
-          _: 1
-        }),
-        _createVNode(_component_VCard, {
-          variant: "outlined",
-          class: "aro-card mb-3 rounded-lg"
-        }, {
-          default: _withCtx(() => [
-            _createVNode(_component_VCardItem, { class: "aro-card-head" }, {
-              prepend: _withCtx(() => [
-                _createVNode(_component_VIcon, {
                   icon: "mdi-magnify-scan",
                   color: "primary"
                 })
@@ -1386,13 +894,13 @@ return (_ctx, _cache) => {
               ]),
               default: _withCtx(() => [
                 _createVNode(_component_VCardTitle, { class: "text-subtitle-1" }, {
-                  default: _withCtx(() => [...(_cache[69] || (_cache[69] = [
+                  default: _withCtx(() => [...(_cache[38] || (_cache[38] = [
                     _createTextVNode("盘搜", -1)
                   ]))]),
                   _: 1
                 }),
                 _createVNode(_component_VCardSubtitle, { class: "text-caption" }, {
-                  default: _withCtx(() => [...(_cache[70] || (_cache[70] = [
+                  default: _withCtx(() => [...(_cache[39] || (_cache[39] = [
                     _createTextVNode("聚合公开网盘分享，地址需容器视角可访问", -1)
                   ]))]),
                   _: 1
@@ -1412,7 +920,7 @@ return (_ctx, _cache) => {
                       default: _withCtx(() => [
                         _createVNode(_component_VSwitch, {
                           modelValue: config.value.pansou_enabled,
-                          "onUpdate:modelValue": _cache[42] || (_cache[42] = $event => ((config.value.pansou_enabled) = $event)),
+                          "onUpdate:modelValue": _cache[15] || (_cache[15] = $event => ((config.value.pansou_enabled) = $event)),
                           label: "启用盘搜",
                           color: "success",
                           density: "compact",
@@ -1429,7 +937,7 @@ return (_ctx, _cache) => {
                       default: _withCtx(() => [
                         _createVNode(_component_VTextField, {
                           modelValue: config.value.pansou_base_url,
-                          "onUpdate:modelValue": _cache[43] || (_cache[43] = $event => ((config.value.pansou_base_url) = $event)),
+                          "onUpdate:modelValue": _cache[16] || (_cache[16] = $event => ((config.value.pansou_base_url) = $event)),
                           label: "盘搜 API 地址",
                           placeholder: "http://host.docker.internal:805",
                           variant: "outlined",
@@ -1447,7 +955,7 @@ return (_ctx, _cache) => {
                       default: _withCtx(() => [
                         _createVNode(_component_VTextField, {
                           modelValue: config.value.pansou_timeout,
-                          "onUpdate:modelValue": _cache[44] || (_cache[44] = $event => ((config.value.pansou_timeout) = $event)),
+                          "onUpdate:modelValue": _cache[17] || (_cache[17] = $event => ((config.value.pansou_timeout) = $event)),
                           label: "超时(秒)",
                           type: "number",
                           variant: "outlined",
@@ -1492,13 +1000,13 @@ return (_ctx, _cache) => {
               ]),
               default: _withCtx(() => [
                 _createVNode(_component_VCardTitle, { class: "text-subtitle-1" }, {
-                  default: _withCtx(() => [...(_cache[71] || (_cache[71] = [
+                  default: _withCtx(() => [...(_cache[40] || (_cache[40] = [
                     _createTextVNode("飞书入口", -1)
                   ]))]),
                   _: 1
                 }),
                 _createVNode(_component_VCardSubtitle, { class: "text-caption" }, {
-                  default: _withCtx(() => [...(_cache[72] || (_cache[72] = [
+                  default: _withCtx(() => [...(_cache[41] || (_cache[41] = [
                     _createTextVNode("内置飞书机器人入口与会话白名单", -1)
                   ]))]),
                   _: 1
@@ -1518,7 +1026,7 @@ return (_ctx, _cache) => {
                       default: _withCtx(() => [
                         _createVNode(_component_VSwitch, {
                           modelValue: config.value.feishu_enabled,
-                          "onUpdate:modelValue": _cache[45] || (_cache[45] = $event => ((config.value.feishu_enabled) = $event)),
+                          "onUpdate:modelValue": _cache[18] || (_cache[18] = $event => ((config.value.feishu_enabled) = $event)),
                           label: "启用飞书入口",
                           color: "success",
                           density: "compact",
@@ -1535,7 +1043,7 @@ return (_ctx, _cache) => {
                       default: _withCtx(() => [
                         _createVNode(_component_VSwitch, {
                           modelValue: config.value.feishu_allow_all,
-                          "onUpdate:modelValue": _cache[46] || (_cache[46] = $event => ((config.value.feishu_allow_all) = $event)),
+                          "onUpdate:modelValue": _cache[19] || (_cache[19] = $event => ((config.value.feishu_allow_all) = $event)),
                           label: "允许所有会话",
                           color: "primary",
                           density: "compact",
@@ -1552,7 +1060,7 @@ return (_ctx, _cache) => {
                       default: _withCtx(() => [
                         _createVNode(_component_VSwitch, {
                           modelValue: config.value.feishu_reply_enabled,
-                          "onUpdate:modelValue": _cache[47] || (_cache[47] = $event => ((config.value.feishu_reply_enabled) = $event)),
+                          "onUpdate:modelValue": _cache[20] || (_cache[20] = $event => ((config.value.feishu_reply_enabled) = $event)),
                           label: "发送飞书回复",
                           color: "primary",
                           density: "compact",
@@ -1568,7 +1076,7 @@ return (_ctx, _cache) => {
                       default: _withCtx(() => [
                         _createVNode(_component_VTextField, {
                           modelValue: config.value.feishu_app_id,
-                          "onUpdate:modelValue": _cache[48] || (_cache[48] = $event => ((config.value.feishu_app_id) = $event)),
+                          "onUpdate:modelValue": _cache[21] || (_cache[21] = $event => ((config.value.feishu_app_id) = $event)),
                           label: "飞书 App ID",
                           placeholder: "cli_xxxxxxxxx",
                           variant: "outlined",
@@ -1586,7 +1094,7 @@ return (_ctx, _cache) => {
                         _createVNode(_component_VTextField, {
                           type: showFeishuSecret.value ? 'text' : 'password',
                           modelValue: config.value.feishu_app_secret,
-                          "onUpdate:modelValue": _cache[50] || (_cache[50] = $event => ((config.value.feishu_app_secret) = $event)),
+                          "onUpdate:modelValue": _cache[23] || (_cache[23] = $event => ((config.value.feishu_app_secret) = $event)),
                           label: "飞书 App Secret",
                           variant: "outlined",
                           density: "compact",
@@ -1596,7 +1104,7 @@ return (_ctx, _cache) => {
                             _createVNode(_component_VIcon, {
                               icon: showFeishuSecret.value ? 'mdi-eye-off' : 'mdi-eye',
                               size: "small",
-                              onClick: _cache[49] || (_cache[49] = $event => (showFeishuSecret.value = !showFeishuSecret.value))
+                              onClick: _cache[22] || (_cache[22] = $event => (showFeishuSecret.value = !showFeishuSecret.value))
                             }, null, 8, ["icon"])
                           ]),
                           _: 1
@@ -1610,7 +1118,7 @@ return (_ctx, _cache) => {
                           cols: "12",
                           class: "py-0"
                         }, {
-                          default: _withCtx(() => [...(_cache[73] || (_cache[73] = [
+                          default: _withCtx(() => [...(_cache[42] || (_cache[42] = [
                             _createElementVNode("div", { class: "text-caption text-medium-emphasis" }, "未允许所有会话时，仅下列白名单中的群聊或用户可触发飞书命令。", -1)
                           ]))]),
                           _: 1
@@ -1625,7 +1133,7 @@ return (_ctx, _cache) => {
                           default: _withCtx(() => [
                             _createVNode(_component_VTextarea, {
                               modelValue: config.value.feishu_allowed_chat_ids,
-                              "onUpdate:modelValue": _cache[51] || (_cache[51] = $event => ((config.value.feishu_allowed_chat_ids) = $event)),
+                              "onUpdate:modelValue": _cache[24] || (_cache[24] = $event => ((config.value.feishu_allowed_chat_ids) = $event)),
                               label: "允许的群聊 Chat ID",
                               rows: "2",
                               variant: "outlined",
@@ -1645,7 +1153,7 @@ return (_ctx, _cache) => {
                           default: _withCtx(() => [
                             _createVNode(_component_VTextarea, {
                               modelValue: config.value.feishu_allowed_user_ids,
-                              "onUpdate:modelValue": _cache[52] || (_cache[52] = $event => ((config.value.feishu_allowed_user_ids) = $event)),
+                              "onUpdate:modelValue": _cache[25] || (_cache[25] = $event => ((config.value.feishu_allowed_user_ids) = $event)),
                               label: "允许的用户 Open ID",
                               rows: "2",
                               variant: "outlined",
@@ -1670,8 +1178,8 @@ return (_ctx, _cache) => {
     _createVNode(_component_VDialog, {
       modelValue: qr.show,
       "onUpdate:modelValue": [
-        _cache[53] || (_cache[53] = $event => ((qr.show) = $event)),
-        _cache[54] || (_cache[54] = value => !value && closeQrDialog())
+        _cache[26] || (_cache[26] = $event => ((qr.show) = $event)),
+        _cache[27] || (_cache[27] = value => !value && closeQrDialog())
       ],
       "max-width": "450"
     }, {
@@ -1686,7 +1194,7 @@ return (_ctx, _cache) => {
                   size: "small",
                   class: "me-2"
                 }),
-                _cache[74] || (_cache[74] = _createTextVNode(" 115网盘扫码登录 ", -1))
+                _cache[43] || (_cache[43] = _createTextVNode(" 115网盘扫码登录 ", -1))
               ]),
               _: 1
             }),
@@ -1714,11 +1222,11 @@ return (_ctx, _cache) => {
                         color: "primary",
                         class: "mb-3"
                       }),
-                      _cache[75] || (_cache[75] = _createElementVNode("div", null, "正在获取二维码...", -1))
+                      _cache[44] || (_cache[44] = _createElementVNode("div", null, "正在获取二维码...", -1))
                     ]))
                   : (qr.qrcode)
                     ? (_openBlock(), _createElementBlock("div", _hoisted_6, [
-                        _cache[77] || (_cache[77] = _createElementVNode("div", { class: "mb-2 font-weight-medium" }, "请选择扫码方式", -1)),
+                        _cache[46] || (_cache[46] = _createElementVNode("div", { class: "mb-2 font-weight-medium" }, "请选择扫码方式", -1)),
                         _createVNode(_component_VChipGroup, {
                           "model-value": qr.clientType,
                           class: "mb-3",
@@ -1771,7 +1279,7 @@ return (_ctx, _cache) => {
                           disabled: qr.loading,
                           onClick: refreshQrCode
                         }, {
-                          default: _withCtx(() => [...(_cache[76] || (_cache[76] = [
+                          default: _withCtx(() => [...(_cache[45] || (_cache[45] = [
                             _createTextVNode(" 刷新二维码 ", -1)
                           ]))]),
                           _: 1
@@ -1784,8 +1292,8 @@ return (_ctx, _cache) => {
                           color: "grey",
                           class: "mb-3"
                         }),
-                        _cache[78] || (_cache[78] = _createElementVNode("div", { class: "text-subtitle-1" }, "二维码获取失败", -1)),
-                        _cache[79] || (_cache[79] = _createElementVNode("div", { class: "text-body-2 text-grey" }, "请点击刷新按钮重试", -1))
+                        _cache[47] || (_cache[47] = _createElementVNode("div", { class: "text-subtitle-1" }, "二维码获取失败", -1)),
+                        _cache[48] || (_cache[48] = _createElementVNode("div", { class: "text-body-2 text-grey" }, "请点击刷新按钮重试", -1))
                       ]))
               ]),
               _: 1
@@ -1800,7 +1308,7 @@ return (_ctx, _cache) => {
                   "prepend-icon": "mdi-close",
                   onClick: closeQrDialog
                 }, {
-                  default: _withCtx(() => [...(_cache[80] || (_cache[80] = [
+                  default: _withCtx(() => [...(_cache[49] || (_cache[49] = [
                     _createTextVNode("关闭", -1)
                   ]))]),
                   _: 1
@@ -1814,7 +1322,7 @@ return (_ctx, _cache) => {
                   disabled: qr.loading,
                   onClick: refreshQrCode
                 }, {
-                  default: _withCtx(() => [...(_cache[81] || (_cache[81] = [
+                  default: _withCtx(() => [...(_cache[50] || (_cache[50] = [
                     _createTextVNode("刷新二维码", -1)
                   ]))]),
                   _: 1
@@ -1833,6 +1341,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-eb2e8235"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-ec7ad793"]]);
 
 export { Config as default };

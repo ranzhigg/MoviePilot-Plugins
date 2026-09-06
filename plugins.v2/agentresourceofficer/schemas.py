@@ -3,20 +3,6 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
-class HDHiveSearchSessionToolInput(BaseModel):
-    keyword: str = Field(..., description="要搜索的影片或剧集名称")
-    media_type: str = Field(default="auto", description="媒体类型，auto / movie / tv；不确定时用 auto")
-    year: Optional[str] = Field(default=None, description="可选年份，用于缩小候选范围")
-    path: Optional[str] = Field(default=None, description="可选目标目录，不填则使用默认目录")
-
-
-class HDHiveSessionPickToolInput(BaseModel):
-    session_id: str = Field(..., description="上一步搜索返回的会话 ID")
-    choice: int = Field(default=0, description="当前阶段要选择的编号，从 1 开始；详情或翻页时可为 0")
-    path: Optional[str] = Field(default=None, description="可选目标目录，不填则使用会话中的目录")
-    action: Optional[str] = Field(default=None, description="可选动作：detail/details/review/详情/审查 或 next/n/下一页")
-
-
 class ShareRouteToolInput(BaseModel):
     url: str = Field(..., description="115 或夸克分享链接")
     path: Optional[str] = Field(default=None, description="目标目录")
@@ -24,11 +10,11 @@ class ShareRouteToolInput(BaseModel):
 
 
 class AssistantRouteToolInput(BaseModel):
-    text: Optional[str] = Field(default=None, description="统一智能入口文本，例如 盘搜搜索 片名、影巢搜索 片名、115登录 或直接粘贴 115/夸克分享链接")
+    text: Optional[str] = Field(default=None, description="统一智能入口文本，例如 盘搜搜索 片名、115登录 或直接粘贴 115/夸克分享链接")
     session: Optional[str] = Field(default="default", description="会话标识，用于关联后续选择、115 待任务与扫码续跑")
     session_id: Optional[str] = Field(default=None, description="可选 assistant:: 会话 ID，适合外部智能体按 sessions 列表中的精确会话继续使用")
     path: Optional[str] = Field(default=None, description="可选目标目录，不填则按当前模式使用默认目录")
-    mode: Optional[str] = Field(default=None, description="结构化模式：mp / pansou / hdhive")
+    mode: Optional[str] = Field(default=None, description="结构化模式：mp / pansou")
     keyword: Optional[str] = Field(default=None, description="结构化搜索关键词")
     url: Optional[str] = Field(default=None, description="结构化分享链接，支持 115 / 夸克")
     access_code: Optional[str] = Field(default=None, description="结构化提取码")
@@ -44,7 +30,7 @@ class AssistantPickToolInput(BaseModel):
     session_id: Optional[str] = Field(default=None, description="可选 assistant:: 会话 ID，优先于 session")
     choice: int = Field(default=0, description="选择的编号，从 1 开始；详情或翻页时可为 0")
     action: Optional[str] = Field(default=None, description="可选动作：detail/details/review/详情/审查 或 next/n/下一页")
-    mode: Optional[str] = Field(default=None, description="推荐列表后续搜索方式：mp / hdhive / pansou")
+    mode: Optional[str] = Field(default=None, description="推荐列表后续搜索方式：mp / pansou")
     path: Optional[str] = Field(default=None, description="可选目标目录，不填则沿用会话目录")
     compact: Optional[bool] = Field(default=True, description="是否使用低 token 回执；默认开启")
 
@@ -145,18 +131,16 @@ class AssistantExecuteActionsToolInput(BaseModel):
 
 
 class AssistantWorkflowToolInput(BaseModel):
-    name: str = Field(..., description="预设工作流名，例如 pansou_search / pansou_transfer / hdhive_candidates / hdhive_unlock / mp_search / mp_search_download / mp_subscribe / mp_recommend / mp_recommend_search / share_transfer / p115_status")
+    name: str = Field(..., description="预设工作流名，例如 pansou_search / pansou_transfer / mp_search / mp_search_download / mp_subscribe / mp_recommend / mp_recommend_search / share_transfer / p115_status")
     session: Optional[str] = Field(default="default", description="工作流会话名")
     session_id: Optional[str] = Field(default=None, description="可选 assistant:: 会话 ID，优先于 session")
     keyword: Optional[str] = Field(default=None, description="搜索关键词")
     choice: Optional[int] = Field(default=None, description="通用选择编号，盘搜转存默认使用 1")
-    candidate_choice: Optional[int] = Field(default=None, description="影巢候选影片编号")
-    resource_choice: Optional[int] = Field(default=None, description="影巢资源编号")
     path: Optional[str] = Field(default=None, description="可选目标目录")
     url: Optional[str] = Field(default=None, description="分享链接")
     access_code: Optional[str] = Field(default=None, description="提取码")
     media_type: Optional[str] = Field(default=None, description="媒体类型，auto / movie / tv")
-    mode: Optional[str] = Field(default=None, description="推荐后续搜索方式，mp / hdhive / pansou")
+    mode: Optional[str] = Field(default=None, description="推荐后续搜索方式，mp / pansou")
     year: Optional[str] = Field(default=None, description="年份")
     client_type: Optional[str] = Field(default=None, description="115 扫码客户端类型")
     source: Optional[str] = Field(default=None, description="MP 推荐来源，例如 tmdb_trending / douban_movie_hot / bangumi_calendar")
@@ -216,7 +200,7 @@ class AssistantRecoverToolInput(BaseModel):
 
 
 class AssistantSessionsToolInput(BaseModel):
-    kind: Optional[str] = Field(default=None, description="按会话类型过滤，例如 assistant_pansou / assistant_hdhive / assistant_p115_login")
+    kind: Optional[str] = Field(default=None, description="按会话类型过滤，例如 assistant_pansou / assistant_mp / assistant_p115_login")
     has_pending_p115: Optional[bool] = Field(default=None, description="是否只看带待继续 115 任务的会话")
     compact: Optional[bool] = Field(default=True, description="是否使用低 token 回执；默认开启")
     limit: Optional[int] = Field(default=20, description="最多返回多少条活跃会话摘要")

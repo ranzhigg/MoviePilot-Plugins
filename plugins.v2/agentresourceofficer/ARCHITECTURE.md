@@ -4,7 +4,7 @@
 
 ## 设计目标
 
-- 一个插件承接“搜索 -> 选择 -> 解锁 -> 转存 -> 签到/用户态 -> 远程入口”
+- 一个插件承接“搜索 -> 选择 -> 转存 -> 远程入口”
 - 智能体、飞书、CLI、后续 MP Agent Tool 共享同一套执行服务
 - 会话交互与底层执行解耦，避免继续把大量业务逻辑堆在消息入口层
 
@@ -15,7 +15,6 @@
 负责不同外部入口和外部平台接入：
 
 - `feishu`
-- `hdhive`
 - `quark`
 - `pansou`
 - 后续 `agent_tool`
@@ -32,8 +31,6 @@
 - `search_service`
 - `unlock_service`
 - `transfer_service`
-- `signin_service`
-- `user_service`
 
 原则：
 
@@ -75,13 +72,6 @@
 - `enabled`
 - `notify`
 - `debug`
-
-### 影巢
-
-- `hdhive_base_url`
-- `hdhive_api_key`
-- `hdhive_default_path`
-- `hdhive_candidate_page_size`
 
 ### 夸克
 
@@ -126,29 +116,6 @@
 
 - `services/p115_transfer.py`
 
-### 从 `HdhiveOpenApi`
-
-随后迁入：
-
-- 搜索
-- 候选解析
-- 解锁
-- 用户信息
-- 配额
-- 分享管理
-
-当前已开始拆出：
-
-- `services/hdhive_openapi.py`
-
-### 从 `HDHiveDailySign`
-
-补入：
-
-- 普通签到
-- 赌狗签到
-- 自动登录与状态记录
-
 ### 从 `FeishuCommandBridgeLong`
 
 最后收口：
@@ -192,29 +159,21 @@ MP_CONTAINER=moviepilot-v2 ./scripts/patch-p115strmhelper-mp-compat.sh
 第一个可用版本只追求三件事：
 
 1. 夸克分享链接直接转存
-2. 影巢搜索并解锁
+2. 盘搜搜索并转存
 3. 飞书调用同一套执行服务
 
 当前进度：
 
 - 已拆出夸克执行服务
-- 已拆出影巢基础 OpenAPI 服务
 - 已拆出 115 转存执行服务
 - 已补上 Agent影视助手 自己的统一智能入口（assistant route / pick）
 - 主插件已具备：
   - 夸克健康检查
   - 夸克转存
-  - 影巢健康检查
-  - 影巢搜索
-  - 影巢关键词候选搜索
-  - 影巢解锁
   - 115 依赖健康检查
   - 115 分享转存
-  - 影巢解锁后自动路由到夸克执行层
-  - 影巢解锁后自动路由到 115 执行层
-  - 影巢会话搜索与按编号继续选择
   - 盘搜搜索与按编号继续执行
-- 统一智能入口对直链、盘搜、影巢三类输入的会话分流
+- 统一智能入口对直链、盘搜两类输入的会话分流
 - 原生 Agent Tool 直接发起和轮询 115 扫码登录
 - 智能入口 `assistant/route` 可直接理解 `115登录` / `检查115登录`
 - 扫码登录成功后可直接返回 115 运行状态摘要，便于飞书与 MP 智能助手继续执行

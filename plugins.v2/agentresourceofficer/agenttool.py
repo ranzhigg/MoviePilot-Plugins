@@ -31,8 +31,6 @@ from .schemas import (
     AssistantToolboxToolInput,
     AssistantWorkflowToolInput,
     FeishuChannelHealthToolInput,
-    HDHiveSearchSessionToolInput,
-    HDHiveSessionPickToolInput,
     P115CancelPendingToolInput,
     P115PendingToolInput,
     P115QRCodeCheckToolInput,
@@ -45,49 +43,6 @@ from .schemas import (
 
 def _get_plugin():
     return PluginManager().running_plugins.get("AgentResourceOfficer")
-
-
-class HDHiveSearchSessionTool(MoviePilotTool):
-    name: str = "agent_resource_officer_hdhive_search"
-    description: str = "Search HDHive by title, return candidate titles and a reusable session_id for the next selection step."
-    args_schema: Type[BaseModel] = HDHiveSearchSessionToolInput
-
-    def get_tool_message(self, **kwargs) -> Optional[str]:
-        keyword = kwargs.get("keyword", "")
-        return f"正在通过 Agent影视助手搜索影巢候选：{keyword}"
-
-    async def run(self, keyword: str, media_type: str = "auto", year: str = None, path: str = None, **kwargs) -> str:
-        plugin = _get_plugin()
-        if not plugin:
-            return "Agent影视助手 插件未运行"
-        return await plugin.tool_hdhive_search_session(
-            keyword=keyword,
-            media_type=media_type,
-            year=year,
-            target_path=path,
-        )
-
-
-class HDHiveSessionPickTool(MoviePilotTool):
-    name: str = "agent_resource_officer_hdhive_pick"
-    description: str = "Continue a previous HDHive session by selecting either a candidate title or a resource item."
-    args_schema: Type[BaseModel] = HDHiveSessionPickToolInput
-
-    def get_tool_message(self, **kwargs) -> Optional[str]:
-        session_id = kwargs.get("session_id", "")
-        choice = kwargs.get("choice", "")
-        return f"正在继续 Agent影视助手 会话：{session_id}，选择 {choice}"
-
-    async def run(self, session_id: str, choice: int = 0, path: str = None, action: str = None, **kwargs) -> str:
-        plugin = _get_plugin()
-        if not plugin:
-            return "Agent影视助手 插件未运行"
-        return await plugin.tool_hdhive_pick_session(
-            session_id=session_id,
-            index=choice,
-            target_path=path,
-            action=action,
-        )
 
 
 class ShareRouteTool(MoviePilotTool):
@@ -111,7 +66,7 @@ class ShareRouteTool(MoviePilotTool):
 
 class AssistantRouteTool(MoviePilotTool):
     name: str = "agent_resource_officer_smart_entry"
-    description: str = "Use the unified Agent影视助手 smart entry for HDHive search, PanSou search, 115 login, or direct 115/Quark share links."
+    description: str = "Use the unified Agent影视助手 smart entry for PanSou search, 115 login, or direct 115/Quark share links."
     args_schema: Type[BaseModel] = AssistantRouteToolInput
 
     def get_tool_message(self, **kwargs) -> Optional[str]:
@@ -467,7 +422,7 @@ class AssistantExecuteActionsTool(MoviePilotTool):
 
 class AssistantWorkflowTool(MoviePilotTool):
     name: str = "agent_resource_officer_run_workflow"
-    description: str = "Run a preset Agent影视助手 workflow such as pansou_transfer, hdhive_unlock, mp_search_best, mp_search_detail, mp_search_download, mp_subscribe, mp_recommend, share_transfer, or p115_status with compact inputs."
+    description: str = "Run a preset Agent影视助手 workflow such as pansou_transfer, mp_search_best, mp_search_detail, mp_search_download, mp_subscribe, mp_recommend, share_transfer, or p115_status with compact inputs."
     args_schema: Type[BaseModel] = AssistantWorkflowToolInput
 
     def get_tool_message(self, **kwargs) -> Optional[str]:
@@ -480,8 +435,6 @@ class AssistantWorkflowTool(MoviePilotTool):
         session_id: str = None,
         keyword: str = None,
         choice: int = None,
-        candidate_choice: int = None,
-        resource_choice: int = None,
         path: str = None,
         url: str = None,
         access_code: str = None,
@@ -505,8 +458,6 @@ class AssistantWorkflowTool(MoviePilotTool):
             session_id=session_id,
             keyword=keyword,
             choice=choice,
-            candidate_choice=candidate_choice,
-            resource_choice=resource_choice,
             target_path=path,
             share_url=url,
             access_code=access_code,
