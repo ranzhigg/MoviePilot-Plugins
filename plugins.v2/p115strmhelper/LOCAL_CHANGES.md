@@ -1,6 +1,6 @@
 # 本地修改快照
 
-基于 DDSRem-Dev/MoviePilot-Plugins 的 P115StrmHelper 2.8.81，保留上游作者与许可证。本 fork 发布版本为 2.8.85，沿用现有 plugins.v2 目录，不迁移到 plugins.v3。
+基于 DDSRem-Dev/MoviePilot-Plugins 的 P115StrmHelper 2.8.81，保留上游作者与许可证。本 fork 发布版本为 2.8.86，沿用现有 plugins.v2 目录，不迁移到 plugins.v3。
 
 ## 包含的修改
 
@@ -16,6 +16,8 @@
 - 本地前端 dist 资源，以及三个用于 Linux ARM64 / CPython 3.14 的配套 wheel
 - 合并 Plex App 播放所需的 STRM ffprobe 探测、Plex MediaInfo Helper 写库、播放 Webhook 和手动补全；移除独立 Plex 工具箱插件及其 Web 反向代理
 - 移除已废弃的 HDHive 签到，以及 P115StrmHelper 全部 `/sh`/TG 频道搜索、资源交互页和频道配置；其他插件的搜索功能不受影响
+- 修复指定网盘路径的离线任务只提交、不生成 STRM 的问题：持久化离线任务 hash，下载完成后按 `整理/瑟瑟` 等目标路径直接扫描并生成 STRM；插件重载或容器重建后继续处理未完成任务
+- 提供固定 fork 来源和版本校验的重建恢复脚本，避免同版本上游包覆盖本地定制
 
 ## 脱敏范围
 
@@ -23,4 +25,4 @@
 
 ## 使用边界
 
-自愈脚本需由部署者自行提供并配置；不设置环境变量时不执行。版本号、仓库索引和发布安装包统一为 2.8.85。环境变量也可以保存在 MoviePilot 的 /config/app.env 中，真实脚本路径仅在部署端设置。
+自愈脚本需由部署者自行提供并配置；不设置环境变量时不执行。版本号、仓库索引和发布安装包统一为 2.8.86。环境变量也可以保存在 MoviePilot 的 /config/app.env 中，真实脚本路径仅在部署端设置。
