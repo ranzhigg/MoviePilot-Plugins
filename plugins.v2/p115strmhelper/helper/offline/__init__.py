@@ -19,6 +19,7 @@ from ...schemas.offline import OfflineTaskItem
 from ...utils.path import PathUtils
 from ...utils.string import StringUtils
 from ...utils.sentry import sentry_manager
+from .response import OfflineAddResult, parse_add_response
 
 
 @sentry_manager.capture_all_class_exceptions
@@ -553,12 +554,8 @@ class OfflineDownloadHelper:
                 else:
                     yield [item_hash, {"status": False, "data": item}]
 
-    def add_urls_to_transfer(self, url_list: List) -> Tuple[bool, int]:
-        """
-        添加一组任务并进行网盘整理
-
-        :return: (是否成功, 接口返回的任务条数；失败时为 0)
-        """
+    def add_urls_to_transfer_result(self, url_list: List) -> OfflineAddResult:
+        """添加整理任务，并保留新增与重复任务的区分结果。"""
         try:
             # 寻找离线下载目录中可运行网盘整理的目录，如果无则调用 add_urls_to_path 函数
             parent_path = None
@@ -569,7 +566,7 @@ class OfflineDownloadHelper:
                     parent_path = path
                     break
             if not parent_path:
-                return self.add_urls_to_path(
+                return self.add_urls_to_path_result(
                     url_list, configer.offline_download_paths[0], track_direct=False
                 )
 
@@ -583,15 +580,15 @@ class OfflineDownloadHelper:
             logger.debug(f"【离线下载】获取到下载目录 {parent_path} ID：{parent_id}")
 
             resp = self.add_urls(url_list=url_list, cid=parent_id)
-            if not resp.get("state", None):
+            outcome = parse_add_response(resp, url_list)
+            if not outcome:
                 logger.error(f"【离线下载】下载任务添加失败: {url_list} {resp}")
-                return False, 0
+                return OfflineAddResult()
+            if outcome.duplicate_count:
+                logger.info("【离线下载】任务已存在，跳过重复提交: %s", url_list)
+                return outcome
 
             result = (resp.get("data") or {}).get("result")
-            added_count = (
-                len(result) if isinstance(result, list) and result else len(url_list)
-            )
-
             # 获取所有任务的 hash，添加到待整理列表中
             for info_hash in self.__extract_result_hashes(result, url_list):
                 self.transfer_list.append(
@@ -601,20 +598,29 @@ class OfflineDownloadHelper:
             for url in url_list:
                 self.post_offline_info(url)
             logger.debug(f"【离线下载】下载任务添加完成: {url_list}")
-            return True, added_count
+            return outcome
         except Exception as e:
             logger.error(f"【离线下载】未知错误：{e}")
-            return False, 0
+            return OfflineAddResult()
 
-    def add_urls_to_path(
+    def add_urls_to_transfer(self, url_list: List) -> Tuple[bool, int]:
+        """
+        添加一组任务并进行网盘整理
+
+        :return: (是否成功, 接口返回的任务条数；失败时为 0)
+        """
+        outcome = self.add_urls_to_transfer_result(url_list)
+        return outcome.success, outcome.added_count
+
+    def add_urls_to_path_result(
         self, url_list: List, path: str, track_direct: bool = True
-    ) -> Tuple[bool, int]:
+    ) -> OfflineAddResult:
         """
         添加一组任务下载到指定路径
 
         :param track_direct: 是否在完成后只扫描该目录并生成 STRM。显式
             指定路径的下载默认开启；整理流程的兼容回退会关闭。
-        :return: (是否成功, 接口返回的任务条数；失败时为 0)
+        :return: 区分新增、重复与失败的离线添加结果。
         """
         try:
             parent_id = get_pid_by_path(
@@ -627,14 +633,15 @@ class OfflineDownloadHelper:
             logger.debug(f"【离线下载】获取到下载目录 {path} ID：{parent_id}")
 
             resp = self.add_urls(url_list=url_list, cid=parent_id)
-            if not resp.get("state", None):
+            outcome = parse_add_response(resp, url_list)
+            if not outcome:
                 logger.error(f"【离线下载】下载任务添加失败: {url_list} {resp}")
-                return False, 0
+                return OfflineAddResult()
+            if outcome.duplicate_count:
+                logger.info("【离线下载】任务已存在，跳过重复提交: %s", url_list)
+                return outcome
 
             result = (resp.get("data") or {}).get("result")
-            added_count = (
-                len(result) if isinstance(result, list) and result else len(url_list)
-            )
 
             if track_direct:
                 direct_hashes = self.__extract_result_hashes(result, url_list)
@@ -664,10 +671,17 @@ class OfflineDownloadHelper:
             for url in url_list:
                 self.post_offline_info(url)
             logger.debug(f"【离线下载】下载任务添加完成: {url_list}")
-            return True, added_count
+            return outcome
         except Exception as e:
             logger.error(f"【离线下载】未知错误：{e}")
-            return False, 0
+            return OfflineAddResult()
+
+    def add_urls_to_path(
+        self, url_list: List, path: str, track_direct: bool = True
+    ) -> Tuple[bool, int]:
+        """兼容旧调用方的指定路径离线下载入口。"""
+        outcome = self.add_urls_to_path_result(url_list, path, track_direct)
+        return outcome.success, outcome.added_count
 
     def pull_status_to_task(self):
         """

@@ -1449,12 +1449,21 @@ class Api:
         path = payload.path
 
         if not path:
-            ok, added_count = servicer.offlinehelper.add_urls_to_transfer(links)
+            outcome = servicer.offlinehelper.add_urls_to_transfer_result(links)
         else:
-            ok, added_count = servicer.offlinehelper.add_urls_to_path(links, path)
+            outcome = servicer.offlinehelper.add_urls_to_path_result(links, path)
 
-        if ok:
-            return ApiResponse(msg=f"{added_count} 个新任务已成功添加，正在后台处理。")
+        if outcome.success:
+            data = {
+                "added_count": outcome.added_count,
+                "duplicate_count": outcome.duplicate_count,
+            }
+            if outcome.duplicate_count:
+                return ApiResponse(msg="离线任务已存在，未重复提交。", data=data)
+            return ApiResponse(
+                msg=f"{outcome.added_count} 个新任务已成功添加，正在后台处理。",
+                data=data,
+            )
 
         return ApiResponse(code=-1, msg="添加失败：请前往后台查看插件日志")
 

@@ -17,7 +17,7 @@ from dotenv import dotenv_values
 
 
 REPO = "https://github.com/ranzhigg/MoviePilot-Plugins"
-VERSION = "2.8.86"
+VERSION = "2.8.87"
 ROOT = Path(os.environ.get("P115_PLUGIN_ROOT", "/app/app/plugins/p115strmhelper"))
 REQUIRED_MARKERS = {
     "helper/offline/__init__.py": (
