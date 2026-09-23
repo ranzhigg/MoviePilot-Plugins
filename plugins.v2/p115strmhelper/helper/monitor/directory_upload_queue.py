@@ -123,9 +123,11 @@ class DirectoryUploadQueue:
             )
         finally:
             with self._lock:
-                if self._worker_thread is th and self._queue is q:
-                    if th.is_alive():
-                        return
+                if (
+                    self._worker_thread is th
+                    and self._queue is q
+                    and not th.is_alive()
+                ):
                     self._worker_thread = None
                     self._queue = None
                     self._stopping = False
