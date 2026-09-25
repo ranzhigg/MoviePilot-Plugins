@@ -589,6 +589,7 @@ class OfflineDownloadHelper:
                 return outcome
 
             result = (resp.get("data") or {}).get("result")
+
             # 获取所有任务的 hash，添加到待整理列表中
             for info_hash in self.__extract_result_hashes(result, url_list):
                 self.transfer_list.append(
