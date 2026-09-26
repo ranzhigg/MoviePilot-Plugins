@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from httpx import Client
 
@@ -361,6 +361,63 @@ class PlexClient:
         for meta in self._metadata(rating_key):
             parts.extend(self._collect_from_meta(meta, only_missing, detailed=True))
         return parts
+
+    def find_strm_part_by_resource(
+        self,
+        pickcode: str = "",
+        share_code: str = "",
+        receive_code: str = "",
+        file_id: str = "",
+        section_keys: Optional[List[str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """按 STRM URL 中的资源参数定位 Plex Part"""
+        target = str(pickcode or "").strip().lower()
+        share_target = str(share_code or "").strip()
+        receive_target = str(receive_code or "").strip()
+        file_target = str(file_id or "").strip()
+        if not target and not share_target:
+            return None
+        from .ffprobe_source import read_strm_url
+
+        keys = section_keys or [str(item.get("key")) for item in self.list_sections()]
+        for section_key in keys:
+            if not section_key:
+                continue
+            for part in self.collect_strm_parts(section_key, only_missing=False):
+                source_url = read_strm_url(str(part.get("file") or ""))
+                if not source_url:
+                    continue
+                query = parse_qs(urlsplit(source_url).query)
+                if target:
+                    values = query.get("pickcode", [])
+                    matched = any(
+                        str(value).strip().lower() == target for value in values
+                    )
+                else:
+                    source_share = str(query.get("share_code", [""])[0]).strip()
+                    source_receive = str(query.get("receive_code", [""])[0]).strip()
+                    source_file = str(
+                        query.get("id", query.get("file_id", [""]))[0]
+                    ).strip()
+                    matched = (
+                        source_share == share_target
+                        and (not receive_target or source_receive == receive_target)
+                        and (not file_target or source_file == file_target)
+                    )
+                if matched:
+                    return part
+        return None
+
+    def find_strm_part_by_pickcode(
+        self,
+        pickcode: str,
+        section_keys: Optional[List[str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """按 STRM URL 中的 pickcode 定位 Plex Part"""
+        return self.find_strm_part_by_resource(
+            pickcode=pickcode,
+            section_keys=section_keys,
+        )
 
     def collect_window_parts_by_rating_key(
         self,

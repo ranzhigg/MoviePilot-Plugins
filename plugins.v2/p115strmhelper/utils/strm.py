@@ -7,8 +7,8 @@ __all__ = [
 
 
 from pathlib import Path
-from typing import Optional, Dict, Any, Union
-from urllib.parse import quote
+from typing import Any, Dict, List, Optional, Tuple, Union
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from app.log import logger
 
@@ -18,6 +18,7 @@ from jinja2 import Template, Environment, select_autoescape
 from jinja2.exceptions import TemplateError
 
 from ..core.config import configer
+from ..core.media_proxy import issue_media_token
 from ..schemas.size import CompareMinSize
 
 
@@ -393,8 +394,13 @@ class StrmUrlGetter:
         初始化 STRM URL 获取器，加载 URL 模板解析器
         """
         self.strm_url_encode = configer.strm_url_encode
-
-        self.base_url_cache = f"{configer.moviepilot_address.rstrip('/')}/api/v1/plugin/P115StrmHelper/redirect_url"
+        self.media_proxy_enabled = bool(
+            getattr(configer, "strm_media_proxy_enabled", False)
+        )
+        endpoint = "media_proxy" if self.media_proxy_enabled else "redirect_url"
+        self.base_url_cache = (
+            f"{configer.moviepilot_address.rstrip('/')}/api/v1/plugin/P115StrmHelper/{endpoint}"
+        )
 
         self.url_template_resolver = None
         if configer.strm_url_template_enabled:
@@ -425,9 +431,10 @@ class StrmUrlGetter:
                     pickcode=pickcode,
                     file_path=file_path,
                     file_id=str(to_id(pickcode)),
+                    media_token=self._media_token(pickcode=pickcode),
                 )
                 if result:
-                    return result
+                    return self._with_media_token(result, pickcode=pickcode)
             except Exception as e:
                 logger.error(f"【STRM URL 模板】渲染失败，使用默认格式: {e}")
 
@@ -443,13 +450,10 @@ class StrmUrlGetter:
             except Exception as e:
                 logger.error(f"【FUSE STRM 接管】处理失败: {e}", exc_info=True)
 
-        strm_url = f"{self.base_url_cache}?pickcode={pickcode}"
+        params = [("pickcode", pickcode)]
         if configer.strm_url_format == "pickname":
-            if self.strm_url_encode:
-                file_name = quote(file_name)
-            strm_url += f"&file_name={file_name}"
-
-        return strm_url
+            params.append(("file_name", file_name))
+        return self._build_url(params)
 
     def get_share_strm_url(
         self,
@@ -479,19 +483,87 @@ class StrmUrlGetter:
                     receive_code=receive_code,
                     file_id=file_id,
                     file_path=file_path,
+                    media_token=self._media_token(
+                        share_code=share_code,
+                        receive_code=receive_code,
+                        file_id=file_id,
+                    ),
                 )
                 if result:
-                    return result
+                    return self._with_media_token(
+                        result,
+                        share_code=share_code,
+                        receive_code=receive_code,
+                        file_id=file_id,
+                    )
             except Exception as e:
                 logger.error(f"【STRM URL 模板】渲染失败，使用默认格式: {e}")
 
-        strm_url = f"{self.base_url_cache}?share_code={share_code}&receive_code={receive_code}&id={file_id}"
+        params = [
+            ("share_code", share_code),
+            ("receive_code", receive_code),
+            ("id", file_id),
+        ]
         if configer.strm_url_format == "pickname":
-            if self.strm_url_encode:
-                file_name = quote(file_name)
-            strm_url += f"&file_name={file_name}"
+            params.append(("file_name", file_name))
+        return self._build_url(params)
 
-        return strm_url
+    def _media_token(self, **resource: str) -> str:
+        if not self.media_proxy_enabled:
+            return ""
+        try:
+            return issue_media_token(**resource)
+        except Exception as exc:
+            logger.error("【媒体代理】生成能力令牌失败: %s", exc)
+            return ""
+
+    def _build_url(self, params: List[Tuple[str, Any]]) -> str:
+        if self.media_proxy_enabled:
+            values = dict(params)
+            token = self._media_token(
+                pickcode=str(values.get("pickcode") or ""),
+                share_code=str(values.get("share_code") or ""),
+                receive_code=str(values.get("receive_code") or ""),
+                file_id=str(values.get("id") or ""),
+            )
+            if token:
+                params = [*params, ("media_token", token)]
+            return f"{self.base_url_cache}?{urlencode(params)}"
+
+        query = []
+        for key, value in params:
+            if key == "file_name" and self.strm_url_encode:
+                value = quote(str(value))
+            query.append(f"{key}={value}")
+        return f"{self.base_url_cache}?{'&'.join(query)}"
+
+    def _with_media_token(self, url: str, **resource: str) -> str:
+        if not self.media_proxy_enabled:
+            return url
+        try:
+            parts = urlsplit(url)
+            query = parse_qsl(parts.query, keep_blank_values=True)
+            present = {key for key, _ in query}
+            resource_query = (
+                ("pickcode", resource.get("pickcode")),
+                ("share_code", resource.get("share_code")),
+                ("receive_code", resource.get("receive_code")),
+                ("id", resource.get("file_id")),
+            )
+            for key, value in resource_query:
+                if value and key not in present:
+                    query.append((key, str(value)))
+                    present.add(key)
+            query = [(key, value) for key, value in query if key != "media_token"]
+            token = self._media_token(**resource)
+            if token:
+                query.append(("media_token", token))
+            return urlunsplit(
+                (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+            )
+        except Exception as exc:
+            logger.warning("【媒体代理】补充能力令牌失败: %s", exc)
+            return url
 
 
 class StrmGenerater:

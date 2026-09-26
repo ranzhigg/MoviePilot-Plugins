@@ -190,7 +190,7 @@ class P115StrmHelper(_PluginBase):
         """
         初始化插件
         """
-        self.api = Api(client=None)
+        self.api = Api(client=None, plex_app_support=self.plex_app_support)
 
         if config:
             configer.update_config(config)
@@ -205,7 +205,10 @@ class P115StrmHelper(_PluginBase):
             self.init_database()
 
             if servicer.init_service():
-                self.api = Api(client=servicer.client)
+                self.api = Api(
+                    client=servicer.client,
+                    plex_app_support=self.plex_app_support,
+                )
 
             U115Patcher().enable()
             P115DiskPatcher().enable()
@@ -387,6 +390,38 @@ class P115StrmHelper(_PluginBase):
                 "methods": ["HEAD"],
                 "summary": "302跳转",
                 "description": "115网盘302跳转",
+                "allow_anonymous": True,
+            },
+            {
+                "path": "/media_proxy",
+                "endpoint": self.api.media_proxy_get,
+                "methods": ["GET"],
+                "summary": "媒体代理",
+                "description": "校验资源级能力令牌后转发 115 媒体流",
+                "allow_anonymous": True,
+            },
+            {
+                "path": "/media_proxy",
+                "endpoint": self.api.media_proxy_head,
+                "methods": ["HEAD"],
+                "summary": "媒体代理探测",
+                "description": "校验资源级能力令牌后返回媒体头信息",
+                "allow_anonymous": True,
+            },
+            {
+                "path": "/media_proxy/{args:path}",
+                "endpoint": self.api.media_proxy_get_path,
+                "methods": ["GET"],
+                "summary": "媒体代理",
+                "description": "兼容路径式 STRM 的媒体代理",
+                "allow_anonymous": True,
+            },
+            {
+                "path": "/media_proxy/{args:path}",
+                "endpoint": self.api.media_proxy_head_path,
+                "methods": ["HEAD"],
+                "summary": "媒体代理探测",
+                "description": "兼容路径式 STRM 的媒体代理探测",
                 "allow_anonymous": True,
             },
             {

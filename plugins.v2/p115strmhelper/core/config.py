@@ -284,6 +284,10 @@ class ConfigManager(BaseModel):
     strm_url_format: str = Field(
         default="pickcode", min_length=1, description="生成 STRM URL 格式"
     )
+    strm_media_proxy_enabled: bool = Field(
+        default=False,
+        description="通过 MoviePilot 媒体代理转发 STRM（使用资源级能力令牌鉴权）",
+    )
     link_redirect_mode: str = Field(
         default="cookie", min_length=1, description="302 跳转方式"
     )
@@ -705,6 +709,16 @@ class ConfigManager(BaseModel):
     plex_app_play_probe_enabled: bool = Field(
         default=True,
         description="Plex 播放或继续播放时立即探测当前 STRM 的时长、视频、音频和字幕",
+    )
+    plex_app_media_proxy_probe_enabled: bool = Field(
+        default=True,
+        description="媒体代理首次请求时异步探测并写入 Plex 媒体流信息",
+    )
+    plex_app_media_proxy_probe_cache_ttl: int = Field(
+        default=300,
+        ge=0,
+        le=86400,
+        description="媒体代理首次探测去重窗口（秒）",
     )
     plex_app_play_forward_episodes: int = Field(
         default=0,

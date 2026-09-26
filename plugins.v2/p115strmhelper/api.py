@@ -17,11 +17,12 @@ from p115client.exception import P115DataError
 from p115client.tool.attr import normalize_attr
 from p115client.tool.fs_files import fs_files_iter
 from fastapi import Body, Request, Response, Depends, status, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .helper.ad_cleanup import ad_cleanup
 from .service import servicer
 from .core.config import configer
+from .core.media_proxy import verify_media_token
 from .core.p115_client import create_client
 from .schemas.donate import DEFAULT_DONATE_INFO as DONATE_INFO
 from .core.cache import idpathcacher, DirectoryCache, r302cacher
@@ -92,8 +93,9 @@ class Api:
     插件 API
     """
 
-    def __init__(self, client: Optional[P115Client]):
+    def __init__(self, client: Optional[P115Client], plex_app_support=None):
         self._client = client
+        self._plex_app_support = plex_app_support
 
         self.browse_dir_pan_api_cache = TTLCache(
             maxsize=1024, ttl=120, region="p115strmhelper_api_browse_dir_api"
@@ -900,6 +902,294 @@ class Api:
         """
         return await Api._redirect_url_impl(
             request, pickcode, file_name, id, share_code, receive_code
+        )
+
+    @staticmethod
+    def _media_proxy_headers(url, upstream, *, head_probe: bool = False) -> Dict[str, str]:
+        """只复制播放器需要的响应头，避免转发 Cookie 或跳转信息"""
+        headers: Dict[str, str] = {}
+        for name in (
+            "Content-Type",
+            "Content-Range",
+            "ETag",
+            "Last-Modified",
+            "Cache-Control",
+        ):
+            value = upstream.headers.get(name)
+            if value:
+                headers[name] = value
+        if upstream.headers.get("Accept-Ranges"):
+            headers["Accept-Ranges"] = upstream.headers["Accept-Ranges"]
+        else:
+            headers["Accept-Ranges"] = "bytes"
+
+        content_length = upstream.headers.get("Content-Length")
+        if head_probe:
+            content_range = upstream.headers.get("Content-Range") or ""
+            total = content_range.rpartition("/")[-1].strip()
+            if total.isdigit():
+                headers["Content-Length"] = total
+            elif content_length:
+                headers["Content-Length"] = content_length
+        elif content_length:
+            headers["Content-Length"] = content_length
+
+        file_name = str(url["file_name"] or "media")
+        file_name = file_name.replace("\r", "").replace("\n", "")
+        try:
+            file_name.encode("ascii")
+            safe_file_name = file_name.replace('"', "'")
+            headers["Content-Disposition"] = f'inline; filename="{safe_file_name}"'
+        except UnicodeEncodeError:
+            headers["Content-Disposition"] = (
+                "inline; filename*=UTF-8''" + quote(file_name, safe="")
+            )
+        return headers
+
+    @staticmethod
+    def _media_proxy_request_headers(request: Request) -> Dict[str, str]:
+        """仅转发 Range、缓存协商和 UA，禁止将客户端凭据传到 115"""
+        headers = {"Accept-Encoding": "identity"}
+        for name in (
+            "range",
+            "if-range",
+            "if-none-match",
+            "if-modified-since",
+            "user-agent",
+        ):
+            value = request.headers.get(name)
+            if value:
+                headers[name.title()] = value
+        return headers
+
+    async def _media_proxy_impl(
+        self,
+        request: Request,
+        pickcode: str = "",
+        file_name: str = "",
+        id: int = 0,
+        share_code: str = "",
+        receive_code: str = "",
+        media_token: str = "",
+    ) -> Response:
+        """受资源级能力令牌保护的 Range/HEAD 媒体流代理"""
+        if not media_token:
+            return self._create_error_response(
+                "Missing media proxy token", status_code=status.HTTP_403_FORBIDDEN
+            )
+        if share_code:
+            if verify_media_token(
+                media_token,
+                share_code=share_code,
+                receive_code=receive_code,
+                file_id=str(id),
+            ) is None:
+                return self._create_error_response(
+                    "Invalid media proxy token", status_code=status.HTTP_403_FORBIDDEN
+                )
+        else:
+            if not (len(pickcode) == 17 and pickcode.isalnum()):
+                return self._create_error_response("Bad pickcode")
+            if verify_media_token(media_token, pickcode=pickcode) is None:
+                return self._create_error_response(
+                    "Invalid media proxy token", status_code=status.HTTP_403_FORBIDDEN
+                )
+
+        user_agent = request.headers.get("User-Agent") or ""
+        try:
+            if share_code:
+                if not receive_code:
+                    receive_code = await servicer.redirect.get_receive_code(share_code)
+                elif len(receive_code) != 4:
+                    return self._create_error_response(
+                        f"Bad receive_code: {receive_code}"
+                    )
+                if not id and file_name:
+                    id = await servicer.redirect.share_get_id_for_name(
+                        share_code, receive_code, file_name
+                    )
+                if not id:
+                    return self._create_error_response(
+                        "Please specify id or name for share_code"
+                    )
+                url = await servicer.redirect.get_share_downurl(
+                    share_code, receive_code, id, user_agent
+                )
+            else:
+                if configer.get_config("link_redirect_mode") == "cookie":
+                    url = await servicer.redirect.get_downurl_cookie(
+                        pickcode.lower(), user_agent
+                    )
+                else:
+                    url = await servicer.redirect.get_downurl_open(
+                        pickcode.lower(), user_agent
+                    )
+        except Exception as exc:
+            logger.error("【媒体代理】获取 115 下载地址失败: %s", exc, exc_info=True)
+            return self._create_error_response(
+                "获取 115 下载地址失败",
+                status_code=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        if self._plex_app_support and (pickcode or share_code):
+            try:
+                self._plex_app_support.enqueue_media_proxy_probe(
+                    pickcode,
+                    str(url),
+                    str(url["file_name"] or file_name),
+                    share_code=share_code,
+                    receive_code=receive_code,
+                    file_id=str(id),
+                )
+            except Exception as exc:
+                logger.debug("【媒体代理】排队 Plex 探测失败: %s", exc)
+
+        client = servicer.redirect.http_client()
+        request_headers = self._media_proxy_request_headers(request)
+        method = "HEAD" if request.method.upper() == "HEAD" else "GET"
+        stream_context = None
+        upstream = None
+        head_probe = False
+        try:
+            stream_context = client.stream(
+                method,
+                str(url),
+                headers=request_headers,
+                timeout=None,
+            )
+            upstream = await stream_context.__aenter__()
+            if method == "HEAD" and (
+                upstream.status_code in (405, 501)
+                or not upstream.headers.get("Content-Length")
+                and not upstream.headers.get("Content-Range")
+            ):
+                await stream_context.__aexit__(None, None, None)
+                request_headers["Range"] = "bytes=0-0"
+                stream_context = client.stream(
+                    "GET",
+                    str(url),
+                    headers=request_headers,
+                    timeout=None,
+                )
+                upstream = await stream_context.__aenter__()
+                head_probe = True
+
+            response_headers = self._media_proxy_headers(
+                url, upstream, head_probe=head_probe
+            )
+            response_status = upstream.status_code
+            if head_probe and 200 <= response_status < 300:
+                response_status = status.HTTP_200_OK
+
+            if method == "HEAD" or not (200 <= upstream.status_code < 400):
+                await stream_context.__aexit__(None, None, None)
+                stream_context = None
+                return Response(status_code=response_status, headers=response_headers)
+
+            async def content_iterator():
+                try:
+                    async for chunk in upstream.aiter_raw():
+                        yield chunk
+                finally:
+                    await stream_context.__aexit__(None, None, None)
+
+            return StreamingResponse(
+                content_iterator(),
+                status_code=response_status,
+                headers=response_headers,
+            )
+        except Exception as exc:
+            if stream_context is not None and upstream is not None:
+                try:
+                    await stream_context.__aexit__(None, None, None)
+                except Exception:
+                    pass
+            logger.warning("【媒体代理】上游流转发失败: %s", exc)
+            return self._create_error_response(
+                "媒体代理上游请求失败",
+                status_code=status.HTTP_502_BAD_GATEWAY,
+            )
+
+    async def media_proxy_get(
+        self,
+        request: Request,
+        pickcode: str = "",
+        file_name: str = "",
+        id: int = 0,
+        share_code: str = "",
+        receive_code: str = "",
+        media_token: str = "",
+    ) -> Response:
+        """转发带资源令牌的媒体 GET 请求"""
+        return await self._media_proxy_impl(
+            request, pickcode, file_name, id, share_code, receive_code, media_token
+        )
+
+    async def media_proxy_head(
+        self,
+        request: Request,
+        pickcode: str = "",
+        file_name: str = "",
+        id: int = 0,
+        share_code: str = "",
+        receive_code: str = "",
+        media_token: str = "",
+    ) -> Response:
+        """转发带资源令牌的媒体 HEAD 请求"""
+        return await self._media_proxy_impl(
+            request, pickcode, file_name, id, share_code, receive_code, media_token
+        )
+
+    async def media_proxy_get_path(
+        self,
+        request: Request,
+        args: str = "",
+        pickcode: str = "",
+        file_name: str = "",
+        id: int = 0,
+        share_code: str = "",
+        receive_code: str = "",
+        media_token: str = "",
+    ) -> Response:
+        """解析路径参数后转发媒体 GET 请求"""
+        resolved_pickcode, error_response = Api._resolve_pickcode_from_args(
+            args, pickcode
+        )
+        if error_response:
+            return error_response
+        if not resolved_pickcode:
+            return self._create_error_response("Missing pickcode parameter")
+        return await self._media_proxy_impl(
+            request,
+            resolved_pickcode,
+            file_name,
+            id,
+            share_code,
+            receive_code,
+            media_token,
+        )
+
+    async def media_proxy_head_path(
+        self,
+        request: Request,
+        args: str = "",
+        pickcode: str = "",
+        file_name: str = "",
+        id: int = 0,
+        share_code: str = "",
+        receive_code: str = "",
+        media_token: str = "",
+    ) -> Response:
+        """解析路径参数后转发媒体 HEAD 请求"""
+        return await self.media_proxy_get_path(
+            request,
+            args,
+            pickcode,
+            file_name,
+            id,
+            share_code,
+            receive_code,
+            media_token,
         )
 
     @staticmethod

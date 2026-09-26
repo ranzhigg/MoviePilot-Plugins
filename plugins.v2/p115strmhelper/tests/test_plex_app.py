@@ -120,6 +120,24 @@ class MediaInfoCompleterTest(unittest.TestCase):
             ],
         )
 
+    def test_resource_locator_matches_share_strm_url(self) -> None:
+        """分享 STRM 应按分享码、提取码和文件 ID 定位 Part。"""
+        client = self.plex_module.PlexClient("http://plex.example", "token")
+        client.list_sections = lambda: [{"key": "1"}]
+        client.collect_strm_parts = lambda section_key, only_missing=False: [
+            {
+                "part_id": 99,
+                "file": (
+                    "https://mp.example/api/v1/plugin/P115StrmHelper/"
+                    "media_proxy?share_code=share123&receive_code=1234&id=99"
+                ),
+            }
+        ]
+        part = client.find_strm_part_by_resource(
+            share_code="share123", receive_code="1234", file_id="99"
+        )
+        self.assertEqual(part["part_id"], 99)
+
     def test_ffprobe_fallback_writes_payload(self) -> None:
         module = self.module
 
