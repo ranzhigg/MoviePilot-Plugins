@@ -905,7 +905,13 @@ class Api:
         )
 
     @staticmethod
-    def _media_proxy_headers(url, upstream, *, head_probe: bool = False) -> Dict[str, str]:
+    def _media_proxy_headers(
+        url,
+        upstream,
+        *,
+        head_probe: bool = False,
+        include_content_length: bool = True,
+    ) -> Dict[str, str]:
         """只复制播放器需要的响应头，避免转发 Cookie 或跳转信息"""
         headers: Dict[str, str] = {}
         for name in (
@@ -923,16 +929,17 @@ class Api:
         else:
             headers["Accept-Ranges"] = "bytes"
 
-        content_length = upstream.headers.get("Content-Length")
-        if head_probe:
-            content_range = upstream.headers.get("Content-Range") or ""
-            total = content_range.rpartition("/")[-1].strip()
-            if total.isdigit():
-                headers["Content-Length"] = total
+        if include_content_length:
+            content_length = upstream.headers.get("Content-Length")
+            if head_probe:
+                content_range = upstream.headers.get("Content-Range") or ""
+                total = content_range.rpartition("/")[-1].strip()
+                if total.isdigit():
+                    headers["Content-Length"] = total
+                elif content_length:
+                    headers["Content-Length"] = content_length
             elif content_length:
                 headers["Content-Length"] = content_length
-        elif content_length:
-            headers["Content-Length"] = content_length
 
         file_name = str(url["file_name"] or "media")
         file_name = file_name.replace("\r", "").replace("\n", "")
@@ -1075,7 +1082,14 @@ class Api:
                 head_probe = True
 
             response_headers = self._media_proxy_headers(
-                url, upstream, head_probe=head_probe
+                url,
+                upstream,
+                head_probe=head_probe,
+                # ffprobe and some players intentionally close a Range
+                # response after reading enough bytes.  Forwarding the CDN
+                # length to StreamingResponse makes h11 reject that normal
+                # early-close path as a truncated fixed-length response.
+                include_content_length=method == "HEAD",
             )
             response_status = upstream.status_code
             if head_probe and 200 <= response_status < 300:
