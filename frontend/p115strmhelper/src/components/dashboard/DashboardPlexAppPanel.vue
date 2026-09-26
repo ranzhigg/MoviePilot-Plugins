@@ -275,7 +275,7 @@ async function loadResult({ silent = false } = {}) {
   if (!silent) loading.value = true;
   error.value = "";
   try {
-    const data = await props.api.get(`plugin/${P115_STRM_HELPER_PLUGIN_ID}/plex_app/result`);
+    const data = await props.api.get(`plugin/${P115_STRM_HELPER_PLUGIN_ID}/plex_app/result/`);
     if (!data || data.success === false) throw new Error(data?.error || "获取 Plex 补全结果失败");
     response.value = data;
     loaded.value = true;
