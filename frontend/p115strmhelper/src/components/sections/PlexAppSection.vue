@@ -182,6 +182,7 @@ async function completeNow() {
   try {
     const response = await api.post(`plugin/${PLUGIN_ID}/plex_app/complete`, {
       section_keys: config.plex_app_sections,
+      force_write: true,
     });
     message.text = success(response)
       ? `补全任务完成：写入 ${response.written_ok || 0} 条`

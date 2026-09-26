@@ -295,7 +295,8 @@ async function triggerFullScan() {
   try {
     const data = await props.api.post(`plugin/${P115_STRM_HELPER_PLUGIN_ID}/plex_app/complete`, {
       full_scan: true,
-      force_write: false,
+      // 全库任务只处理缺失项；明确强制写入，避免 Plex 扫描 busy 时丢掉已解析数据。
+      force_write: true,
     });
     if (!data || data.success === false) throw new Error(data?.error || "全库扫描启动失败");
     notice.value = "全库扫描已排队，完成后会把总量、补全数和剩余数写入看板。";
