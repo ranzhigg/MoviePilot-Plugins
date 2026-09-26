@@ -1,6 +1,6 @@
 # 本地修改快照
 
-基于 DDSRem-Dev/MoviePilot-Plugins 的 P115StrmHelper 2.8.81，保留上游作者与许可证。本 fork 发布版本为 2.8.91，沿用现有 plugins.v2 目录，不迁移到 plugins.v3。
+基于 DDSRem-Dev/MoviePilot-Plugins 的 P115StrmHelper 2.8.81，保留上游作者与许可证。本 fork 发布版本为 2.8.95，沿用现有 plugins.v2 目录，不迁移到 plugins.v3。
 
 ## 包含的修改
 
@@ -24,6 +24,8 @@
 - Plex 播放/继续播放 Webhook 视为“打开即探测”：当前电影或剧集进入进程内后台队列后立即读取 STRM 对应媒体的时长、视频、音频和字幕信息；播放请求不等待探测完成，队列会合并重复事件并让当前条目先完成
 - 播放探测默认只处理当前条目；可单独设置播放后的后续剧集预取量，停止/手动补全仍使用独立的预取配置，避免当前条目被后续探测拖慢
 - Plex 结果 API 增加待处理播放探测数量，便于判断媒体信息是否仍在后台补齐
+- Plex Webhook 新增 `media.new`/`media.update` 入库事件；同时每 15 分钟对已选媒体库执行一次仅缺失项的增量兜底，避免 Plex 未发送入库事件时遗漏新媒体
+- 入库自动补全默认使用 Helper 强制写入，绕过 Plex 扫描期间的短暂 busy 状态；仍受已选媒体库、`only_missing` 和现有批次/重试配置约束
 - 提供固定 fork 来源和版本校验的重建恢复脚本，避免同版本上游包覆盖本地定制
 
 ## 脱敏范围
@@ -32,4 +34,4 @@
 
 ## 使用边界
 
-自愈脚本需由部署者自行提供并配置；不设置环境变量时不执行。版本号、仓库索引和发布安装包统一为 2.8.91。播放即时探测默认开启，但仍需开启 Plex App、配置 Plex MediaInfo Helper、选择媒体库并接收 Plex Webhook；片头片尾按需功能默认关闭，需在 Plex Pass 服务端启用 Plex Webhook 与标记探测选项。环境变量也可以保存在 MoviePilot 的 /config/app.env 中，真实脚本路径仅在部署端设置。
+自愈脚本需由部署者自行提供并配置；不设置环境变量时不执行。版本号、仓库索引和发布安装包统一为 2.8.95。播放即时探测默认开启，但仍需开启 Plex App、配置 Plex MediaInfo Helper、选择媒体库并接收 Plex Webhook；入库自动补全默认开启并由每 15 分钟增量扫描兜底；片头片尾按需功能默认关闭，需在 Plex Pass 服务端启用 Plex Webhook 与标记探测选项。环境变量也可以保存在 MoviePilot 的 /config/app.env 中，真实脚本路径仅在部署端设置。

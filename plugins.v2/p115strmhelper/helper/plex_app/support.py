@@ -332,6 +332,8 @@ class PlexAppSupport:
             return "play"
         if "stop" in value or "scrobble" in value:
             return "stop"
+        if "ingest" in value or "new" in value or "update" in value:
+            return "ingest"
         if "prefetch" in value:
             return "prefetch"
         return "manual"
@@ -711,6 +713,27 @@ class PlexAppSupport:
             self._helper_health_failures,
         )
 
+    def auto_completion_tick(self) -> None:
+        """定期增量补全新入库媒体，作为 Plex media.new Webhook 的兜底。"""
+        if not bool(self._value("auto_completion_enabled", True)):
+            return
+        if not self.configured():
+            logger.debug("Plex App 自动补全跳过：Plex/Helper 配置不完整")
+            return
+        result = self.start_completion(
+            source="scheduler.ingest",
+            force_write=bool(self._value("auto_completion_force_write", True)),
+        )
+        if result.get("success"):
+            logger.info("Plex App 新媒体自动补全已排队")
+        elif result.get("status") in ("queued", "running"):
+            logger.debug("Plex App 新媒体自动补全跳过：已有任务在运行")
+        else:
+            logger.warning(
+                "Plex App 新媒体自动补全未启动：%s",
+                result.get("error") or "未知错误",
+            )
+
     def list_sections(self) -> Dict[str, Any]:
         completer = self._build_completer()
         if not completer:
@@ -747,12 +770,40 @@ class PlexAppSupport:
         except (TypeError, ValueError):
             return {"success": False, "error": "payload 非 JSON"}
         event = data.get("event") or ""
-        if event not in ("media.play", "media.resume", "media.stop", "media.scrobble"):
+        if event not in (
+            "media.play",
+            "media.resume",
+            "media.stop",
+            "media.scrobble",
+            "media.new",
+            "media.update",
+        ):
             return {"success": True, "skipped": event}
         metadata = data.get("Metadata") or {}
         rating_key = str(metadata.get("ratingKey") or "").strip()
         if not rating_key:
             return {"success": False, "error": "无 ratingKey"}
+        if event in ("media.new", "media.update"):
+            if not bool(self._value("auto_completion_enabled", True)):
+                return {
+                    "success": True,
+                    "event": event,
+                    "ratingKey": rating_key,
+                    "queued": False,
+                    "skipped": "auto_completion_disabled",
+                }
+            queued = self.complete_rating_key(
+                rating_key,
+                source="webhook.ingest",
+                forward=0,
+            )
+            return {
+                "success": True,
+                "event": event,
+                "ratingKey": rating_key,
+                "queued": queued,
+                "metadata_queued": queued,
+            }
         if event in ("media.play", "media.resume"):
             metadata_queued = False
             if bool(self._value("play_probe_enabled", True)):

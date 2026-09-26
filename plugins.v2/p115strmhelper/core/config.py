@@ -710,7 +710,15 @@ class ConfigManager(BaseModel):
         default=None, description="Plex 媒体库 key，逗号分隔"
     )
     plex_app_webhook_enabled: bool = Field(
-        default=False, description="接收 Plex 播放与停止 Webhook"
+        default=False, description="接收 Plex 入库、播放与停止 Webhook"
+    )
+    plex_app_auto_completion_enabled: bool = Field(
+        default=True,
+        description="新媒体入库后自动探测并补全 Plex 媒体流信息",
+    )
+    plex_app_auto_completion_force_write: bool = Field(
+        default=True,
+        description="自动补全时忽略 Plex 繁忙状态写入 Helper",
     )
     plex_app_play_probe_enabled: bool = Field(
         default=True,

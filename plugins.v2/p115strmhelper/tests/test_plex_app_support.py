@@ -27,6 +27,8 @@ class _ConfigStub:
             "plex_app_helper_url": "http://helper.example",
             "plex_app_sections": "1",
             "plex_app_webhook_enabled": True,
+            "plex_app_auto_completion_enabled": True,
+            "plex_app_auto_completion_force_write": True,
             "plex_app_play_probe_enabled": True,
             "plex_app_play_forward_episodes": 0,
             "plex_app_only_missing": True,
@@ -169,6 +171,27 @@ class PlexAppSupportTest(unittest.TestCase):
         result = self.support.webhook_payload(json.dumps({"event": "media.stop", **payload}))
         self.assertTrue(result["queued"])
         self.assertEqual(_CompleterStub.calls, [("episode-8", 0), ("episode-8", 5)])
+
+    def test_media_new_event_queues_ingest_probe(self) -> None:
+        """新媒体入库事件应立即进入独立的 ingest 补全范围。"""
+        result = self.support.webhook_payload(
+            json.dumps(
+                {
+                    "event": "media.new",
+                    "Metadata": {"ratingKey": "movie-9", "type": "movie"},
+                }
+            )
+        )
+        self.assertTrue(result["metadata_queued"])
+        self.assertEqual(_CompleterStub.calls, [("movie-9", 0)])
+
+    def test_media_update_is_deduplicated_in_ingest_scope(self) -> None:
+        """同一媒体短时间内的多次库更新只触发一次自动补全。"""
+        payload = {"Metadata": {"ratingKey": "movie-10", "type": "movie"}}
+        self.support.webhook_payload(json.dumps({"event": "media.new", **payload}))
+        result = self.support.webhook_payload(json.dumps({"event": "media.update", **payload}))
+        self.assertFalse(result["metadata_queued"])
+        self.assertEqual(_CompleterStub.calls, [("movie-10", 0)])
 
 
 if __name__ == "__main__":

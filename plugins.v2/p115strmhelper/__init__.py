@@ -498,7 +498,7 @@ class P115StrmHelper(_PluginBase):
                 "endpoint": self.plex_app_webhook_api,
                 "methods": ["POST"],
                 "auth": "apikey",
-                "summary": "接收 Plex 播放/停止 Webhook",
+                "summary": "接收 Plex 入库/播放/停止 Webhook",
             },
             {
                 "path": "/get_machine_id",
@@ -1003,6 +1003,21 @@ class P115StrmHelper(_PluginBase):
                     "name": "Plex App Helper 健康检查",
                     "trigger": CronTrigger.from_crontab("*/5 * * * *"),
                     "func": self.plex_app_support.helper_health_tick,
+                    "kwargs": {},
+                }
+            )
+        if (
+            configer.enabled
+            and configer.plex_app_enabled
+            and configer.plex_app_helper_url
+            and configer.plex_app_auto_completion_enabled
+        ):
+            cron_service.append(
+                {
+                    "id": "P115StrmHelper_plex_app_auto_completion",
+                    "name": "Plex App 新媒体自动补全",
+                    "trigger": CronTrigger.from_crontab("*/15 * * * *"),
+                    "func": self.plex_app_support.auto_completion_tick,
                     "kwargs": {},
                 }
             )
