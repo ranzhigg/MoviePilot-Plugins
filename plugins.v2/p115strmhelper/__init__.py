@@ -463,7 +463,7 @@ class P115StrmHelper(_PluginBase):
                 "endpoint": self.plex_app_webhook_api,
                 "methods": ["POST"],
                 "auth": "apikey",
-                "summary": "接收 Plex 播放 Webhook",
+                "summary": "接收 Plex 播放/停止 Webhook",
             },
             {
                 "path": "/get_machine_id",
@@ -835,6 +835,22 @@ class P115StrmHelper(_PluginBase):
                     },
                     {
                         "path": "/webdav",
+                        "endpoint": servicer.webdav_core.head,
+                        "methods": ["HEAD"],
+                        "summary": "Webdav HEAD",
+                        "description": "Webdav HEAD",
+                        "allow_anonymous": True,
+                    },
+                    {
+                        "path": "/webdav/{path:path}",
+                        "endpoint": servicer.webdav_core.head,
+                        "methods": ["HEAD"],
+                        "summary": "Webdav HEAD",
+                        "description": "Webdav HEAD",
+                        "allow_anonymous": True,
+                    },
+                    {
+                        "path": "/webdav",
                         "endpoint": servicer.webdav_core.options,
                         "methods": ["OPTIONS"],
                         "summary": "Webdav OPTIONS",
@@ -1024,11 +1040,11 @@ class P115StrmHelper(_PluginBase):
         )
 
     def plex_app_result_api(self) -> Dict[str, Any]:
-        """返回最近的 Plex App 补全结果。"""
+        """返回最近的 Plex App 补全、播放探测和标记分析结果。"""
         return self.plex_app_support.result()
 
     async def plex_app_webhook_api(self, request: Request) -> Dict[str, Any]:
-        """接收 Plex Webhook，处理 media.stop/media.scrobble 事件。"""
+        """接收 Plex Webhook，按播放事件分析标记或补全媒体信息。"""
         payload_text = ""
         try:
             form = await request.form()

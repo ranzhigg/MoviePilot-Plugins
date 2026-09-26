@@ -179,7 +179,7 @@ class ServiceHelper:
             self._init_transfer_enhancement()
 
             # 初始化 Webdav 服务
-            self.webdav_core = WebdavCore(client=self.client)
+            self.webdav_core = WebdavCore(client=self.client, redirect=self.redirect)
 
             # 启动 Emby 媒体信息提取全局队列 worker
             emby_mediainfo_queue.start()

@@ -5,6 +5,7 @@ from mimetypes import guess_type
 from posixpath import split as splitpath
 from sqlite3 import connect
 from time import time
+from typing import Any
 from urllib.parse import quote, unquote
 
 from cachedict import LRUDict, TTLDict
@@ -40,6 +41,7 @@ class WebdavCore:
         cache_dir_ttl: float = 300,
         cache_url: bool = True,
         cache_propfind: bool = True,
+        redirect: Any = None,
     ):
         """
         初始化 WebDAV 核心模块
@@ -48,8 +50,10 @@ class WebdavCore:
         :param cache_dir_ttl (float): 目录缓存 TTL（秒）
         :param cache_url (bool): 是否启用 URL 缓存
         :param cache_propfind (bool): 是否启用 PROPFIND 缓存
+        :param redirect: 可选的统一 CDN 重定向器
         """
         self.client = client
+        self.redirect = redirect
         self.cache_attr: LRUDict[int | str, dict] = LRUDict(65536)
         self.cache_children: TTLDict[int, dict[str, dict]] = TTLDict(
             cache_dir_ttl, maxsize=1024
@@ -191,21 +195,58 @@ class WebdavCore:
             and self.cache_url_enabled
             and (url := self.cache_url.get((id, user_agent)))
         ):
-            if int(URL(url).query["t"]) - time() > 60 * 5:
+            try:
+                expires_at = int(URL(url).query.get("t", 0))
+            except (TypeError, ValueError):
+                expires_at = 0
+            # t 是 115 签名 URL 的常见字段，但不是所有兼容接口都会返回；
+            # 缺少 t 时由 TTLDict 负责过期，不能让探测请求直接抛异常。
+            if not expires_at or expires_at - time() > 60 * 5:
                 logger.debug(f"cached url for id {id}: {url}")
                 return url
-        resp = await self.client.download_url_app(
-            pickcode, app="android", headers={"user-agent": user_agent}, async_=True
-        )
-        if not resp["state"]:
-            if resp.get("error") == "文件上传不完整":
-                throw(errno.EISDIR, id)
-            check_response(resp)
-        url = resp["data"]["url"]
+
+        if self.redirect is not None:
+            # WebDAV 与 /redirect_url 共用解析器，统一 UA 隔离、并发合并、
+            # CDN 刷新以及 Open API/Cookie 两种取链模式。
+            if configer.get_config("link_redirect_mode") == "cookie":
+                url = await self.redirect.get_downurl_cookie(pickcode, user_agent)
+            else:
+                url = await self.redirect.get_downurl_open(pickcode, user_agent)
+            url = str(url)
+        else:
+            # 保留 WebdavCore 被单独实例化时的兼容路径。
+            resp = await self.client.download_url_app(
+                pickcode, app="android", headers={"user-agent": user_agent}, async_=True
+            )
+            if not resp["state"]:
+                if resp.get("error") == "文件上传不完整":
+                    throw(errno.EISDIR, id)
+                check_response(resp)
+            url = resp["data"]["url"]
         if self.cache_url_enabled:
             self.cache_url[(id, user_agent)] = url
         logger.debug(f"GET url for id {id}: {url}")
         return url
+
+    async def _resolve_file_target(
+        self, path: str, id: int, pickcode: str
+    ) -> tuple[int, str]:
+        """解析请求目标，返回文件 ID 与 pickcode；目录目标的 pickcode 为空。"""
+        if id >= 0:
+            pickcode = self.client.to_pickcode(id)
+        elif pickcode:
+            id = self.client.to_id(pickcode)
+        elif path.lstrip("/").startswith("<"):
+            fid = path.lstrip("/<").partition("/")[0]
+            id = self.client.to_id(fid)
+            pickcode = self.client.to_pickcode(fid)
+        else:
+            attr = await self.get_attr(path)
+            id = attr["id"]
+            pickcode = self.client.to_pickcode(
+                id, prefix="fa" if attr["is_dir"] else "a"
+            )
+        return id, "" if pickcode.startswith("f") else pickcode
 
     @staticmethod
     def iter_response_parts(attr):
@@ -318,29 +359,34 @@ class WebdavCore:
         :param refresh (bool): 是否强制刷新缓存
         :return RedirectResponse: 重定向响应或目录内容
         """
-        if id >= 0:
-            pickcode = self.client.to_pickcode(id)
-        elif pickcode:
-            id = self.client.to_id(pickcode)
-        elif path.lstrip("/").startswith("<"):
-            fid = path.lstrip("/<").partition("/")[0]
-            id = self.client.to_id(fid)
-            pickcode = self.client.to_pickcode(fid)
-        else:
-            attr = await self.get_attr(path)
-            id = attr["id"]
-            pickcode = self.client.to_pickcode(
-                id, prefix="fa" if attr["is_dir"] else "a"
+        id, pickcode = await self._resolve_file_target(path, id, pickcode)
+        if not pickcode:
+            return await self.get_children(id, refresh=refresh)
+        user_agent = request.headers.get("user-agent", "")
+        try:
+            return RedirectResponse(
+                url=await self.get_url(id, user_agent, refresh=refresh),
+                status_code=302,
             )
-        if not pickcode.startswith("f"):
-            user_agent = request.headers.get("user-agent", "")
-            try:
-                return RedirectResponse(
-                    url=await self.get_url(id, user_agent, refresh=refresh)
-                )
-            except IsADirectoryError:
-                pass
-        return await self.get_children(id, refresh=refresh)
+        except IsADirectoryError:
+            # 保留旧行为：115 将未完成上传标记为 EISDIR 时，继续按目录读取。
+            return await self.get_children(id, refresh=refresh)
+
+    async def head(
+        self,
+        request: Request,
+        path: str = "/",
+        id: int = -1,
+        pickcode: str = "",
+        refresh: bool = False,
+    ):
+        """处理 WebDAV HEAD 请求，让播放器在播放前探测真实 CDN 资源。"""
+        id, pickcode = await self._resolve_file_target(path, id, pickcode)
+        if not pickcode:
+            return Response(status_code=405, headers={"Allow": "PROPFIND, OPTIONS"})
+        user_agent = request.headers.get("user-agent", "")
+        url = await self.get_url(id, user_agent, refresh=refresh)
+        return Response(status_code=302, headers={"Location": url})
 
     @staticmethod
     async def options():

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import logging
 import math
@@ -9,6 +10,8 @@ import os
 import posixpath
 import re
 import subprocess
+from threading import Lock
+from time import monotonic
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 try:
@@ -341,18 +344,34 @@ def ffprobe_url(
 class FfprobeSource:
     """将 Plex 返回的文件路径转换为 MP 路径并提供 ffprobe 媒体信息。"""
 
-    def __init__(self, path_map: str = "", timeout: float = 40.0) -> None:
+    def __init__(
+        self, path_map: str = "", timeout: float = 40.0, cache_ttl: float = 300.0
+    ) -> None:
         self._mappings = parse_path_map(path_map)
         try:
             self._timeout = max(1.0, float(timeout))
         except (TypeError, ValueError):
             self._timeout = 40.0
+        try:
+            ttl = max(0.0, float(cache_ttl))
+        except (TypeError, ValueError):
+            ttl = 300.0
+        self._cache_ttl = ttl
+        self._cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        self._cache_lock = Lock()
+
+    def clear_cache(self) -> None:
+        """清空媒体探测缓存。"""
+        with self._cache_lock:
+            self._cache.clear()
 
     def mapped_path(self, plex_path: str) -> str:
         """返回当前 MoviePilot 容器实际可访问的路径。"""
         return map_path(plex_path, self._mappings)
 
-    def find_streams_by_name(self, file_path: str) -> Optional[Dict[str, Any]]:
+    def find_streams_by_name(
+        self, file_path: str, force: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """
         读取 Plex STRM 的首行 URL并探测媒体流。
 
@@ -373,8 +392,21 @@ class FfprobeSource:
         if not url:
             logger.debug("ffprobe 找不到 STRM URL: %s", mapped)
             return None
+        if not force and self._cache_ttl > 0:
+            with self._cache_lock:
+                cached = self._cache.get(url)
+                if cached is not None:
+                    expires_at, cached_info = cached
+                    if expires_at > monotonic():
+                        return deepcopy(cached_info)
+                    self._cache.pop(url, None)
         info = ffprobe_url(url, timeout=self._timeout)
         if info:
-            return info
+            if self._cache_ttl > 0:
+                with self._cache_lock:
+                    if len(self._cache) >= 2048:
+                        self._cache.pop(next(iter(self._cache)))
+                    self._cache[url] = (monotonic() + self._cache_ttl, deepcopy(info))
+            return deepcopy(info)
         logger.debug("ffprobe 未解析到媒体流: %s", mapped)
         return None

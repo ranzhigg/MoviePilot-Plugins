@@ -95,6 +95,30 @@ class MediaInfoCompleterTest(unittest.TestCase):
         package.__path__ = [str(PLEX_APP_DIR)]
         sys.modules.setdefault("p115_plex_app", package)
         cls.module = importlib.import_module("p115_plex_app.mediainfo")
+        cls.plex_module = importlib.import_module("p115_plex_app.plex_client")
+
+    def test_native_marker_requests_are_scoped_to_one_rating_key(self) -> None:
+        """原生标记接口必须只接收当前条目，并分别请求 intro/credits。"""
+        client = self.plex_module.PlexClient("http://plex.example", "token")
+        calls = []
+
+        def fake_put(path, params=None):
+            calls.append((path, params))
+            return True
+
+        client._put = fake_put
+        self.assertTrue(client.detect_intro("episode/7", force=True))
+        self.assertTrue(client.detect_credits("episode/7", force=False))
+        self.assertEqual(
+            calls,
+            [
+                ("/library/metadata/episode%2F7/intro", {"force": 1}),
+                (
+                    "/library/metadata/episode%2F7/credits",
+                    {"force": 0, "manual": 1},
+                ),
+            ],
+        )
 
     def test_ffprobe_fallback_writes_payload(self) -> None:
         module = self.module
@@ -126,7 +150,6 @@ class MediaInfoCompleterTest(unittest.TestCase):
         self.assertEqual(summary["resolved"], 1)
         self.assertEqual(summary["ffprobe_hits"], 1)
         self.assertEqual(summary["written_ok"], 1)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,10 +1,10 @@
-"""Plex API 轻封装：枚举媒体库、列出条目、抽取 STRM part 信息。"""
+"""Plex API 轻封装：枚举媒体库、补全媒体信息并请求原生分析。"""
 
 from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from httpx import Client
 
@@ -12,7 +12,7 @@ from app.sdk.logging import logger
 
 
 class PlexClient:
-    """封装 Plex 服务器只读查询，用于枚举需要补全媒体信息的 STRM 条目。"""
+    """封装 Plex 查询、媒体信息写入及原生片头片尾分析请求。"""
 
     def __init__(self, base_url: str, token: str, timeout: float = 30.0) -> None:
         """
@@ -45,13 +45,19 @@ class PlexClient:
             logger.warning("Plex API 请求失败 %s: %s", path, e)
         return None
 
-    def _put(self, path: str) -> bool:
+    def _put(self, path: str, params: Optional[Dict[str, Any]] = None) -> bool:
         """
-        发起 PUT 请求（用于 unmatch 等写操作）。
+        发起 PUT 请求（用于元数据写操作和原生媒体分析）。
 
         :param path: 相对路径（含查询串）
         :return: 2xx 返回 True
         """
+        if params:
+            query = urlencode(
+                {key: value for key, value in params.items() if value is not None}
+            )
+            if query:
+                path = f"{path}{'&' if '?' in path else '?'}{query}"
         sep = "&" if "?" in path else "?"
         url = f"{self._base}{path}{sep}X-Plex-Token={quote(self._token, safe='')}"
         try:
@@ -63,6 +69,20 @@ class PlexClient:
         except Exception as e:
             logger.warning("Plex PUT 请求失败 %s: %s", path, e)
         return False
+
+    def detect_intro(self, rating_key: str, force: bool = False) -> bool:
+        """请求 Plex 对一个剧集条目执行原生片头检测。"""
+        return self._put(
+            f"/library/metadata/{quote(str(rating_key), safe='')}/intro",
+            params={"force": int(bool(force))},
+        )
+
+    def detect_credits(self, rating_key: str, force: bool = False) -> bool:
+        """请求 Plex 对一个电影/剧集条目执行原生片尾字幕检测。"""
+        return self._put(
+            f"/library/metadata/{quote(str(rating_key), safe='')}/credits",
+            params={"force": int(bool(force)), "manual": 1},
+        )
 
     def section_type(self, section_key: str) -> str:
         """
@@ -240,6 +260,11 @@ class PlexClient:
         """
         metas = self._metadata(rating_key)
         return self._build_label(metas[0]) if metas else ""
+
+    def item_type(self, rating_key: str) -> str:
+        """返回条目类型，例如 ``episode`` 或 ``movie``。"""
+        metas = self._metadata(rating_key)
+        return str(metas[0].get("type") or "").strip().lower() if metas else ""
 
     def item_section_key(self, rating_key: str) -> str:
         """返回单个条目所属的 Plex 媒体库 key。"""

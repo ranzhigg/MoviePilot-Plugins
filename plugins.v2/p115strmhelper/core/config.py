@@ -700,13 +700,34 @@ class ConfigManager(BaseModel):
         default=None, description="Plex 媒体库 key，逗号分隔"
     )
     plex_app_webhook_enabled: bool = Field(
-        default=False, description="接收 Plex 播放停止 Webhook"
+        default=False, description="接收 Plex 播放与停止 Webhook"
+    )
+    plex_app_play_probe_enabled: bool = Field(
+        default=True,
+        description="Plex 播放或继续播放时立即探测当前 STRM 的时长、视频、音频和字幕",
+    )
+    plex_app_play_forward_episodes: int = Field(
+        default=0,
+        ge=0,
+        le=50,
+        description="播放时顺带预探测后续剧集数（0=仅当前集，建议保持 0 以优先完成当前集）",
+    )
+    plex_app_marker_detection_enabled: bool = Field(
+        default=False,
+        description="播放剧集时请求 Plex 原生分析片头片尾（需 Plex Pass）",
+    )
+    plex_app_marker_detection_force: bool = Field(
+        default=False,
+        description="播放时强制重新执行 Plex 片头片尾分析",
     )
     plex_app_dedup_window: int = Field(
-        default=300, ge=0, le=86400, description="播放补全去重窗口（秒）"
+        default=300, ge=0, le=86400, description="播放事件去重窗口（秒）"
     )
     plex_app_forward_episodes: int = Field(
-        default=5, ge=0, le=50, description="剧集播放后预取集数"
+        default=5,
+        ge=0,
+        le=50,
+        description="停止或手动播放补全时预取后续剧集数",
     )
 
     error_info_upload: bool = Field(default=True, description="上传错误信息")
