@@ -1087,6 +1087,7 @@ class P115StrmHelper(_PluginBase):
             source="api",
             force_write=bool(payload.get("force_write", False)),
             section_keys=section_keys,
+            full_scan=bool(payload.get("full_scan", False)),
         )
 
     def plex_app_result_api(self) -> Dict[str, Any]:
@@ -1117,6 +1118,7 @@ class P115StrmHelper(_PluginBase):
         return [
             {"key": "strm", "name": "STRM 同步执行记录"},
             {"key": "status", "name": "运行状态与账户"},
+            {"key": "plex_app", "name": "Plex 媒体信息补全"},
             {"key": "sync_del", "name": "同步删除历史"},
             {"key": "manual_transfer", "name": "网盘整理"},
             {"key": "full_sync_actions", "name": "全量同步"},
@@ -1147,6 +1149,16 @@ class P115StrmHelper(_PluginBase):
                 {"cols": 12},
                 {
                     "title": "同步删除历史",
+                    "subtitle": self.plugin_name,
+                    "border": True,
+                },
+                None,
+            )
+        if k == "plex_app":
+            return (
+                {"cols": 12},
+                {
+                    "title": "Plex 媒体信息补全",
                     "subtitle": self.plugin_name,
                     "border": True,
                 },

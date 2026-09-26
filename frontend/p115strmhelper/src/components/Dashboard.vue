@@ -4,6 +4,8 @@
       :refresh-interval="refreshInterval" />
     <DashboardStatusPanel v-else-if="panelKey === 'status'" :api="api" :config="config" :allow-refresh="allowRefresh"
       :refresh-interval="refreshInterval" />
+    <DashboardPlexAppPanel v-else-if="panelKey === 'plex_app'" :api="api" :config="config"
+      :allow-refresh="allowRefresh" />
     <DashboardSyncDelPanel v-else-if="panelKey === 'sync_del'" :api="api" :config="config" :allow-refresh="allowRefresh"
       :refresh-interval="refreshInterval" />
     <DashboardManualTransferPanel v-else-if="panelKey === 'manual_transfer'" :api="api" :config="config"
@@ -17,6 +19,7 @@
 import { computed, onMounted } from "vue";
 import DashboardStrmPanel from "./dashboard/DashboardStrmPanel.vue";
 import DashboardStatusPanel from "./dashboard/DashboardStatusPanel.vue";
+import DashboardPlexAppPanel from "./dashboard/DashboardPlexAppPanel.vue";
 import DashboardSyncDelPanel from "./dashboard/DashboardSyncDelPanel.vue";
 import DashboardManualTransferPanel from "./dashboard/DashboardManualTransferPanel.vue";
 import DashboardFullSyncPanel from "./dashboard/DashboardFullSyncPanel.vue";
@@ -44,6 +47,7 @@ const props = defineProps({
 const panelKey = computed(() => {
   const k = (props.config?.key ?? "").trim();
   if (k === "status") return "status";
+  if (k === "plex_app") return "plex_app";
   if (k === "sync_del") return "sync_del";
   if (k === "manual_transfer") return "manual_transfer";
   if (k === "full_sync_actions") return "full_sync_actions";

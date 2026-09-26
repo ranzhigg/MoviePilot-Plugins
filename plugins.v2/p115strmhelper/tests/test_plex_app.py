@@ -217,5 +217,51 @@ class MediaInfoCompleterTest(unittest.TestCase):
         self.assertEqual(summary["written_ok"], 3)
         self.assertEqual(summary["write_failed"], 0)
 
+    def test_full_scan_reports_library_total_and_remaining_count(self) -> None:
+        """全库扫描应区分总量、扫描前完整量和本次实际待补量。"""
+        module = self.module
+
+        class PlexStub:
+            def collect_strm_parts(self, section_key: str, only_missing: bool = True):
+                del section_key
+                parts = [
+                    {"part_id": 1, "file": "/media/1.strm"},
+                    {"part_id": 2, "file": "/media/2.strm"},
+                    {"part_id": 3, "file": "/media/3.strm"},
+                ]
+                return parts[:2] if only_missing else parts
+
+        class HelperStub:
+            def write_batch(self, items, force=False):
+                del force
+                return {
+                    "ok": len(items),
+                    "results": [
+                        {"part_id": item["part_id"], "success": True}
+                        for item in items
+                    ],
+                }
+
+        class ProbeStub:
+            def find_streams_by_name(self, file_path: str):
+                del file_path
+                return {"source": "ffprobe", "streams": [{"stream_type": 1}]}
+
+        completer = module.MediaInfoCompleter(
+            plex=PlexStub(),
+            helper=HelperStub(),
+            emby=None,
+            use_emby=False,
+            ffprobe=ProbeStub(),
+            use_ffprobe=True,
+        )
+        summary = completer.run(["1"], full_scan=True)
+        self.assertEqual(summary["total_strm_parts"], 3)
+        self.assertEqual(summary["missing_before"], 2)
+        self.assertEqual(summary["completed_before"], 1)
+        self.assertEqual(summary["written_ok"], 2)
+        self.assertEqual(summary["pending_after"], 0)
+        self.assertEqual(summary["completed_after"], 3)
+
 if __name__ == "__main__":
     unittest.main()

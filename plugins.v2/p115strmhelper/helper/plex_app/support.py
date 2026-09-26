@@ -143,6 +143,21 @@ class PlexAppSupport:
 
     @classmethod
     def _log_summary(cls, scope: str, summary: Dict[str, Any]) -> None:
+        if summary.get("total_strm_parts") is not None:
+            logger.info(
+                "Plex App 媒体信息补全[%s]：全库 %s，扫描前完整 %s，候选 %s，解析 %s，写入 %s，扫描后完整 %s，仍待补 %s，未命中 %s，失败 %s",
+                scope,
+                summary.get("total_strm_parts", 0),
+                summary.get("completed_before", 0),
+                summary.get("strm_parts", 0),
+                summary.get("resolved", 0),
+                summary.get("written_ok", 0),
+                summary.get("completed_after", 0),
+                summary.get("pending_after", 0),
+                summary.get("unresolved", 0),
+                summary.get("write_failed", 0),
+            )
+            return
         logger.info(
             "Plex App 媒体信息补全[%s]：处理 %s，解析 %s，写入 %s，未命中 %s，失败 %s",
             scope,
@@ -158,8 +173,9 @@ class PlexAppSupport:
         source: str = "manual",
         force_write: bool = False,
         section_keys: Optional[List[str]] = None,
+        full_scan: bool = False,
     ) -> Dict[str, Any]:
-        """在后台启动全量补全，避免 HTTP 请求被 ffprobe 长时间占用。"""
+        """在后台启动补全，避免 HTTP 请求被 ffprobe 长时间占用。"""
         with self._full_completion_lock:
             status = str(self._full_completion_state.get("status") or "idle")
             if status in ("queued", "running"):
@@ -181,6 +197,7 @@ class PlexAppSupport:
                 "status": "queued",
                 "source": source,
                 "queued_at": queued_at,
+                "full_scan": bool(full_scan),
             }
 
         def worker() -> None:
@@ -194,6 +211,7 @@ class PlexAppSupport:
                     source=source,
                     force_write=force_write,
                     section_keys=section_keys,
+                    full_scan=full_scan,
                 )
                 finished_at = int(time())
                 with self._full_completion_lock:
@@ -236,6 +254,7 @@ class PlexAppSupport:
             "status": "queued",
             "source": source,
             "queued_at": queued_at,
+            "full_scan": bool(full_scan),
         }
 
     def run_completion(
@@ -243,8 +262,9 @@ class PlexAppSupport:
         source: str = "manual",
         force_write: bool = False,
         section_keys: Optional[List[str]] = None,
+        full_scan: bool = False,
     ) -> Dict[str, Any]:
-        """执行指定 Plex 媒体库的全量 STRM 媒体信息补全。"""
+        """执行指定 Plex 媒体库的 STRM 媒体信息补全。"""
         if not self._task_lock.acquire(blocking=False):
             return {"success": False, "error": "已有 Plex App 补全任务在运行"}
         try:
@@ -263,6 +283,9 @@ class PlexAppSupport:
                         "count",
                         "done",
                         "total",
+                        "total_strm_parts",
+                        "missing_before",
+                        "completed_before",
                         "batches",
                         "written_ok",
                         "write_failed",
@@ -276,8 +299,17 @@ class PlexAppSupport:
                 keys,
                 only_missing=bool(self._value("only_missing", True)),
                 progress_cb=progress,
+                full_scan=bool(full_scan),
             )
-            summary.update({"success": True, "source": source, "ts": int(time())})
+            summary.update(
+                {
+                    "success": True,
+                    "source": source,
+                    "full_scan": bool(full_scan),
+                    "selected_sections": keys,
+                    "ts": int(time()),
+                }
+            )
             self._save_result("plex_app_last_result", summary)
             self._log_summary("全量", summary)
             return summary
@@ -742,17 +774,34 @@ class PlexAppSupport:
         return {"success": True, "sections": sections}
 
     def result(self) -> Dict[str, Any]:
-        """返回全量、播放和片头片尾探测结果及当前队列长度。"""
+        """返回补全看板、播放探测和片头片尾结果及当前队列长度。"""
         with self._completion_queue_lock:
             pending = len(self._completion_queue)
         with self._full_completion_lock:
             completion = dict(self._full_completion_state)
         with self._proxy_probe_lock:
             pending_proxy = len(self._proxy_probe_inflight)
+        last_result = self._get_result("plex_app_last_result")
+        dashboard = {
+            "status": completion.get("status") or "idle",
+            "full_scan": bool(last_result.get("full_scan")),
+            "scan_mode": last_result.get("scan_mode") or "missing",
+            "total_strm_parts": last_result.get("total_strm_parts"),
+            "completed_before": last_result.get("completed_before"),
+            "missing_before": last_result.get("missing_before"),
+            "written_ok": last_result.get("written_ok", 0),
+            "unresolved": last_result.get("unresolved", 0),
+            "write_failed": last_result.get("write_failed", 0),
+            "pending_after": last_result.get("pending_after"),
+            "completed_after": last_result.get("completed_after"),
+            "last_scan_ts": last_result.get("ts"),
+            "selected_sections": last_result.get("selected_sections") or [],
+        }
         return {
             "success": True,
             "completion": completion,
-            "result": self._get_result("plex_app_last_result"),
+            "result": last_result,
+            "dashboard": dashboard,
             "last_play_result": self._get_result("plex_app_last_play_result"),
             "last_marker_result": self._get_result("plex_app_last_marker_result"),
             "last_proxy_probe_result": self._get_result(

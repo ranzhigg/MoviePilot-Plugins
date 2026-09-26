@@ -335,6 +335,7 @@ class MediaInfoCompleter:
         section_keys: List[str],
         only_missing: bool = True,
         progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+        full_scan: bool = False,
     ) -> Dict[str, Any]:
         """
         执行补全：枚举分区 STRM part，解析数据源并写入 helper。
@@ -342,11 +343,20 @@ class MediaInfoCompleter:
         :param section_keys: 要处理的 Plex 分区 key 列表
         :param only_missing: 是否仅处理缺失媒体信息的 part
         :param progress_cb: 进度回调（收到阶段性统计）
+        :param full_scan: 是否同时统计选定媒体库中的全部 STRM part。
+            全库扫描仍只写入缺失项，避免为了统计总数重复覆盖已有信息。
         :return: 汇总结果
         """
         summary: Dict[str, Any] = {
             "sections": len(section_keys),
             "strm_parts": 0,
+            "total_strm_parts": None,
+            "missing_before": None,
+            "completed_before": None,
+            "pending_after": None,
+            "completed_after": None,
+            "full_scan": bool(full_scan),
+            "scan_mode": "full" if full_scan else ("missing" if only_missing else "all"),
             "resolved": 0,
             "emby_hits": 0,
             "ffprobe_hits": 0,
@@ -358,15 +368,53 @@ class MediaInfoCompleter:
             "details": [],
         }
 
-        # 1. 枚举 STRM part
+        # 1. 枚举 STRM part。全库看板需要知道总量与扫描开始时的完整量，
+        # 但实际处理仍只取缺失项，避免全库刷新时无意义地重写全部 part。
         all_parts: List[Dict[str, Any]] = []
-        for skey in section_keys:
-            all_parts.extend(self._plex.collect_strm_parts(skey, only_missing))
+        if full_scan:
+            total_parts: List[Dict[str, Any]] = []
+            for skey in section_keys:
+                total_parts.extend(self._plex.collect_strm_parts(skey, False))
+            summary["total_strm_parts"] = len(total_parts)
+
+            if only_missing:
+                for skey in section_keys:
+                    all_parts.extend(self._plex.collect_strm_parts(skey, True))
+                summary["missing_before"] = len(all_parts)
+                summary["completed_before"] = max(
+                    0, len(total_parts) - len(all_parts)
+                )
+            else:
+                # 显式要求 full_scan 但配置为处理全部项时，已经枚举过总量，
+                # 直接复用结果，不再发起第三轮 Plex 请求。
+                all_parts = total_parts
+        else:
+            for skey in section_keys:
+                all_parts.extend(self._plex.collect_strm_parts(skey, only_missing))
+            if not only_missing:
+                summary["total_strm_parts"] = len(all_parts)
+
         summary["strm_parts"] = len(all_parts)
+        if summary["missing_before"] is None and only_missing:
+            summary["missing_before"] = len(all_parts)
         if not all_parts:
+            if summary["total_strm_parts"] is not None:
+                summary["completed_after"] = summary["total_strm_parts"]
+                summary["pending_after"] = 0
+            if progress_cb:
+                progress_cb({"phase": "done", **summary})
             return summary
         if progress_cb:
-            progress_cb({"phase": "enumerated", "count": len(all_parts)})
+            progress_cb(
+                {
+                    "phase": "enumerated",
+                    "count": len(all_parts),
+                    "total": len(all_parts),
+                    "total_strm_parts": summary.get("total_strm_parts"),
+                    "missing_before": summary.get("missing_before"),
+                    "completed_before": summary.get("completed_before"),
+                }
+            )
 
         # 2. 并发解析数据源
         payloads: List[Dict[str, Any]] = []
@@ -406,6 +454,21 @@ class MediaInfoCompleter:
                 summary,
                 "全量补全",
                 progress_cb=progress_cb,
+            )
+        if summary["total_strm_parts"] is not None:
+            # 全库统计场景下，未解析和写入失败的候选就是扫描结束后仍缺失的项。
+            pending_after = max(
+                0,
+                self._safe_int(summary.get("unresolved"))
+                + self._safe_int(summary.get("write_failed")),
+            )
+            summary["pending_after"] = min(
+                self._safe_int(summary["total_strm_parts"]), pending_after
+            )
+            summary["completed_after"] = max(
+                0,
+                self._safe_int(summary["total_strm_parts"])
+                - self._safe_int(summary["pending_after"]),
             )
         if progress_cb:
             progress_cb({"phase": "done", **summary})
