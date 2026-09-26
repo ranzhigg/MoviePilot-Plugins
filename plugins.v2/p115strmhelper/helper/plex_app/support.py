@@ -30,6 +30,8 @@ class PlexAppSupport:
         self._recent_marker_triggers: Dict[str, float] = {}
         self._completion_queue: Dict[str, Dict[str, Any]] = {}
         self._completion_worker_active = False
+        self._full_completion_lock = Lock()
+        self._full_completion_state: Dict[str, Any] = {"status": "idle"}
         self._helper_health_failures = 0
         self._proxy_probe_lock = Lock()
         self._proxy_probe_inflight: Set[str] = set()
@@ -81,6 +83,18 @@ class PlexAppSupport:
             concurrency = max(1, min(16, int(cls._value("concurrency", 3) or 3)))
         except (TypeError, ValueError):
             concurrency = 3
+        try:
+            write_batch_size = max(
+                1, min(100, int(cls._value("write_batch_size", 20) or 20))
+            )
+        except (TypeError, ValueError):
+            write_batch_size = 20
+        try:
+            write_busy_retries = max(
+                0, min(5, int(cls._value("write_busy_retries", 2) or 0))
+            )
+        except (TypeError, ValueError):
+            write_busy_retries = 2
 
         helper = HelperClient(helper_url, helper_token)
         ffprobe = FfprobeSource(
@@ -95,6 +109,8 @@ class PlexAppSupport:
             force_write=force_write,
             ffprobe=ffprobe,
             use_ffprobe=True,
+            write_batch_size=write_batch_size,
+            write_busy_retries=write_busy_retries,
         )
 
     @classmethod
@@ -137,6 +153,91 @@ class PlexAppSupport:
             summary.get("write_failed", 0),
         )
 
+    def start_completion(
+        self,
+        source: str = "manual",
+        force_write: bool = False,
+        section_keys: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """在后台启动全量补全，避免 HTTP 请求被 ffprobe 长时间占用。"""
+        with self._full_completion_lock:
+            status = str(self._full_completion_state.get("status") or "idle")
+            if status in ("queued", "running"):
+                return {
+                    "success": False,
+                    "error": "已有 Plex App 补全任务在运行",
+                    "status": status,
+                }
+            # 旧版本插件可能仍有一个同步任务持有锁，升级后不要再启动第二个。
+            if not self._task_lock.acquire(blocking=False):
+                return {
+                    "success": False,
+                    "error": "已有 Plex App 补全任务在运行",
+                    "status": "running",
+                }
+            self._task_lock.release()
+            queued_at = int(time())
+            self._full_completion_state = {
+                "status": "queued",
+                "source": source,
+                "queued_at": queued_at,
+            }
+
+        def worker() -> None:
+            started_at = int(time())
+            with self._full_completion_lock:
+                self._full_completion_state.update(
+                    {"status": "running", "started_at": started_at}
+                )
+            try:
+                result = self.run_completion(
+                    source=source,
+                    force_write=force_write,
+                    section_keys=section_keys,
+                )
+                finished_at = int(time())
+                with self._full_completion_lock:
+                    self._full_completion_state.update(
+                        {
+                            "status": "done" if result.get("success") else "failed",
+                            "finished_at": finished_at,
+                            "result": result,
+                        }
+                    )
+            except Exception as exc:
+                logger.error("Plex App 后台全量补全异常: %s", exc, exc_info=True)
+                with self._full_completion_lock:
+                    self._full_completion_state.update(
+                        {
+                            "status": "failed",
+                            "finished_at": int(time()),
+                            "error": str(exc),
+                        }
+                    )
+
+        try:
+            Thread(
+                target=worker,
+                daemon=True,
+                name="p115-plex-app-full-completion",
+            ).start()
+        except Exception as exc:
+            with self._full_completion_lock:
+                self._full_completion_state = {
+                    "status": "failed",
+                    "finished_at": int(time()),
+                    "error": str(exc),
+                }
+            logger.exception("Plex App 全量补全 worker 启动失败")
+            return {"success": False, "error": "后台任务启动失败"}
+        return {
+            "success": True,
+            "queued": True,
+            "status": "queued",
+            "source": source,
+            "queued_at": queued_at,
+        }
+
     def run_completion(
         self,
         source: str = "manual",
@@ -153,9 +254,28 @@ class PlexAppSupport:
             keys = section_keys or self._selected_sections()
             if not keys:
                 return {"success": False, "error": "未指定 Plex 媒体库 key"}
+            def progress(event: Dict[str, Any]) -> None:
+                # 仅保存计数型进度，避免把媒体路径或请求参数写入状态。
+                safe = {
+                    key: event.get(key)
+                    for key in (
+                        "phase",
+                        "count",
+                        "done",
+                        "total",
+                        "batches",
+                        "written_ok",
+                        "write_failed",
+                    )
+                    if key in event
+                }
+                with self._full_completion_lock:
+                    self._full_completion_state["progress"] = safe
+
             summary = completer.run(
                 keys,
                 only_missing=bool(self._value("only_missing", True)),
+                progress_cb=progress,
             )
             summary.update({"success": True, "source": source, "ts": int(time())})
             self._save_result("plex_app_last_result", summary)
@@ -602,10 +722,13 @@ class PlexAppSupport:
         """返回全量、播放和片头片尾探测结果及当前队列长度。"""
         with self._completion_queue_lock:
             pending = len(self._completion_queue)
+        with self._full_completion_lock:
+            completion = dict(self._full_completion_state)
         with self._proxy_probe_lock:
             pending_proxy = len(self._proxy_probe_inflight)
         return {
             "success": True,
+            "completion": completion,
             "result": self._get_result("plex_app_last_result"),
             "last_play_result": self._get_result("plex_app_last_play_result"),
             "last_marker_result": self._get_result("plex_app_last_marker_result"),

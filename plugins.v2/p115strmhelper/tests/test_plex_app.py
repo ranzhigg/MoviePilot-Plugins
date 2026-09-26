@@ -169,5 +169,53 @@ class MediaInfoCompleterTest(unittest.TestCase):
         self.assertEqual(summary["ffprobe_hits"], 1)
         self.assertEqual(summary["written_ok"], 1)
 
+    def test_media_info_is_written_in_small_batches(self) -> None:
+        """全量/窗口补全不能因单次 Helper 忙碌判断而整批失败。"""
+        module = self.module
+
+        class PlexStub:
+            def item_label(self, rating_key: str) -> str:
+                return "测试剧集"
+
+            def collect_window_parts_by_rating_key(self, rating_key: str, **kwargs):
+                return [
+                    {"part_id": 1, "file": "/media/1.strm", "label": "一"},
+                    {"part_id": 2, "file": "/media/2.strm", "label": "二"},
+                    {"part_id": 3, "file": "/media/3.strm", "label": "三"},
+                ]
+
+        class HelperStub:
+            calls = []
+
+            def write_batch(self, items, force=False):
+                self.calls.append([item["part_id"] for item in items])
+                return {
+                    "ok": len(items),
+                    "results": [
+                        {"part_id": item["part_id"], "success": True}
+                        for item in items
+                    ],
+                }
+
+        class ProbeStub:
+            def find_streams_by_name(self, file_path: str):
+                return {"source": "ffprobe", "streams": [{"stream_type": 1}]}
+
+        helper = HelperStub()
+        completer = module.MediaInfoCompleter(
+            plex=PlexStub(),
+            helper=helper,
+            emby=None,
+            use_emby=False,
+            ffprobe=ProbeStub(),
+            use_ffprobe=True,
+            write_batch_size=2,
+        )
+        summary = completer.run_rating_key("episode-1")
+        self.assertEqual(helper.calls, [[1, 2], [3]])
+        self.assertEqual(summary["resolved"], 3)
+        self.assertEqual(summary["written_ok"], 3)
+        self.assertEqual(summary["write_failed"], 0)
+
 if __name__ == "__main__":
     unittest.main()

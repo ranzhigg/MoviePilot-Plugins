@@ -700,6 +700,12 @@ class ConfigManager(BaseModel):
     plex_app_concurrency: int = Field(
         default=3, ge=1, le=16, description="ffprobe 并发数"
     )
+    plex_app_write_batch_size: int = Field(
+        default=20, ge=1, le=100, description="Helper 单批写入条数"
+    )
+    plex_app_write_busy_retries: int = Field(
+        default=2, ge=0, le=5, description="Plex 繁忙时单批重试次数"
+    )
     plex_app_sections: Optional[str] = Field(
         default=None, description="Plex 媒体库 key，逗号分隔"
     )

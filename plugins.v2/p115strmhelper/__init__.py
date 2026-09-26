@@ -1057,7 +1057,7 @@ class P115StrmHelper(_PluginBase):
     def plex_app_complete_api(
         self, payload: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """手动触发 Plex STRM 媒体信息补全。"""
+        """后台触发 Plex STRM 媒体信息补全，避免长时间占用 API 请求。"""
         payload = payload or {}
         section_keys = payload.get("section_keys")
         if isinstance(section_keys, str):
@@ -1068,7 +1068,7 @@ class P115StrmHelper(_PluginBase):
             ]
         if not isinstance(section_keys, list):
             section_keys = None
-        return self.plex_app_support.run_completion(
+        return self.plex_app_support.start_completion(
             source="api",
             force_write=bool(payload.get("force_write", False)),
             section_keys=section_keys,

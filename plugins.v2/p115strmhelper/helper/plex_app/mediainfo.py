@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from time import sleep
 from typing import Any, Callable, Dict, List, Optional
 
 from app.sdk.logging import logger
@@ -27,6 +28,9 @@ class MediaInfoCompleter:
         force_write: bool = False,
         ffprobe: Optional[FfprobeSource] = None,
         use_ffprobe: bool = True,
+        write_batch_size: int = 20,
+        write_busy_retries: int = 2,
+        write_retry_delay: float = 2.0,
     ) -> None:
         """
         初始化补全器。
@@ -40,6 +44,9 @@ class MediaInfoCompleter:
         :param force_write: 是否忽略 Plex 繁忙强制写入
         :param ffprobe: ffprobe 数据源
         :param use_ffprobe: 是否启用 ffprobe 数据源
+        :param write_batch_size: 每次提交给 Helper 的最大条数
+        :param write_busy_retries: Helper 报告 Plex 繁忙时的重试次数
+        :param write_retry_delay: 繁忙重试的基础等待秒数
         """
         self._plex = plex
         self._helper = helper
@@ -50,6 +57,122 @@ class MediaInfoCompleter:
         self._overwrite = overwrite_streams
         self._concurrency = max(1, concurrency)
         self._force = force_write
+        self._write_batch_size = max(1, min(100, int(write_batch_size or 20)))
+        self._write_busy_retries = max(0, min(5, int(write_busy_retries or 0)))
+        self._write_retry_delay = max(0.0, min(30.0, float(write_retry_delay or 0)))
+
+    @staticmethod
+    def _safe_int(value: Any, default: int = 0) -> int:
+        """把 Helper 的可选统计字段安全转换为整数。"""
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return default
+
+    def _write_payloads(
+        self,
+        payloads: List[Dict[str, Any]],
+        summary: Dict[str, Any],
+        scope: str,
+        item_index: Optional[Dict[Any, Dict[str, Any]]] = None,
+        progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> None:
+        """
+        以小批次写入 Helper。
+
+        Plex 播放或扫描期间 Helper 会拒绝写库。以前全量补全只发一个大批次，
+        导致一次忙碌判断就丢掉全部解析结果；现在每批独立统计，并只重试当前批次。
+        """
+        if not payloads:
+            return
+
+        total = len(payloads)
+        batches = 0
+        for start in range(0, total, self._write_batch_size):
+            batch = payloads[start : start + self._write_batch_size]
+            batches += 1
+            result: Optional[Dict[str, Any]] = None
+            busy_attempt = 0
+
+            while True:
+                result = self._helper.write_batch(batch, force=self._force)
+                if not result or not result.get("busy") or self._force:
+                    break
+                if busy_attempt >= self._write_busy_retries:
+                    break
+                busy_attempt += 1
+                summary["write_retries"] = summary.get("write_retries", 0) + 1
+                if self._write_retry_delay:
+                    sleep(self._write_retry_delay * busy_attempt)
+
+            batch_summary = {
+                "written_ok": 0,
+                "write_failed": 0,
+                "helper_busy": False,
+            }
+            if result is None:
+                batch_summary["write_failed"] = len(batch)
+                summary["write_failed"] += len(batch)
+                for item in batch:
+                    if item_index is not None:
+                        current = item_index.get(item.get("part_id"))
+                        if current:
+                            current["status"] = "write_failed"
+            elif result.get("busy"):
+                batch_summary["helper_busy"] = True
+                batch_summary["write_failed"] = len(batch)
+                summary["helper_busy"] = True
+                summary["write_failed"] += len(batch)
+                for item in batch:
+                    if item_index is not None:
+                        current = item_index.get(item.get("part_id"))
+                        if current:
+                            current["status"] = "busy"
+            else:
+                ok = max(0, min(len(batch), self._safe_int(result.get("ok"))))
+                failed = len(batch) - ok
+                batch_summary["written_ok"] = ok
+                batch_summary["write_failed"] = failed
+                summary["written_ok"] += ok
+                summary["write_failed"] += failed
+
+                results = result.get("results") or []
+                for item_result in results:
+                    part_id = item_result.get("part_id")
+                    if item_index is not None:
+                        current = item_index.get(part_id)
+                        if current:
+                            success = bool(
+                                item_result.get("success")
+                                or item_result.get("ok")
+                                or item_result.get("written")
+                            )
+                            current["status"] = "written" if success else "write_failed"
+                            if not success and item_result.get("error"):
+                                current["error"] = str(item_result["error"])[:120]
+                if item_index is not None and not results and ok == len(batch):
+                    for item in batch:
+                        current = item_index.get(item.get("part_id"))
+                        if current:
+                            current["status"] = "written"
+
+            self._log_write_outcome(
+                f"{scope} 批次 {batches}",
+                len(batch),
+                result,
+                batch_summary,
+            )
+            if progress_cb:
+                progress_cb(
+                    {
+                        "phase": "writing",
+                        "done": min(start + len(batch), total),
+                        "total": total,
+                        "batches": batches,
+                        "written_ok": summary.get("written_ok", 0),
+                        "write_failed": summary.get("write_failed", 0),
+                    }
+                )
 
     def _resolve_one(self, part: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -161,6 +284,7 @@ class MediaInfoCompleter:
             "written_ok": 0,
             "write_failed": 0,
             "helper_busy": False,
+            "write_retries": 0,
             "items": [],
         }
         parts = self._plex.collect_window_parts_by_rating_key(
@@ -203,31 +327,7 @@ class MediaInfoCompleter:
         for p in payloads:
             p.pop("source", None)
         if payloads:
-            res = self._helper.write_batch(payloads, force=self._force)
-            if res is None:
-                summary["write_failed"] = len(payloads)
-                for p in payloads:
-                    it = item_index.get(p.get("part_id"))
-                    if it:
-                        it["status"] = "write_failed"
-            elif res.get("busy"):
-                summary["helper_busy"] = True
-                summary["write_failed"] = len(payloads)
-                for p in payloads:
-                    it = item_index.get(p.get("part_id"))
-                    if it:
-                        it["status"] = "busy"
-            else:
-                summary["written_ok"] = res.get("ok", 0)
-                summary["write_failed"] = len(payloads) - res.get("ok", 0)
-                # 按 helper 返回的逐条结果回填写入状态
-                for r in res.get("results") or []:
-                    it = item_index.get(r.get("part_id"))
-                    if it:
-                        it["status"] = "written" if r.get("success") else "write_failed"
-                        if not r.get("success") and r.get("error"):
-                            it["error"] = str(r.get("error"))[:120]
-            self._log_write_outcome(scope, len(payloads), res, summary)
+            self._write_payloads(payloads, summary, scope, item_index=item_index)
         return summary
 
     def run(
@@ -254,6 +354,7 @@ class MediaInfoCompleter:
             "written_ok": 0,
             "write_failed": 0,
             "helper_busy": False,
+            "write_retries": 0,
             "details": [],
         }
 
@@ -300,16 +401,12 @@ class MediaInfoCompleter:
         for p in payloads:
             p.pop("source", None)
         if payloads:
-            res = self._helper.write_batch(payloads, force=self._force)
-            if res is None:
-                summary["write_failed"] = len(payloads)
-            elif res.get("busy"):
-                summary["helper_busy"] = True
-                summary["write_failed"] = len(payloads)
-            else:
-                summary["written_ok"] = res.get("ok", 0)
-                summary["write_failed"] = len(payloads) - res.get("ok", 0)
-            self._log_write_outcome("全量补全", len(payloads), res, summary)
+            self._write_payloads(
+                payloads,
+                summary,
+                "全量补全",
+                progress_cb=progress_cb,
+            )
         if progress_cb:
             progress_cb({"phase": "done", **summary})
         return summary
