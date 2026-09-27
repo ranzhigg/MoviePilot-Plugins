@@ -471,16 +471,45 @@ class MediaInfoCompleter:
                 }
             )
 
-        # 2. 并发解析数据源
+        # 2. 并发解析数据源并增量写入 Helper。
+        #
+        # 旧实现等全部 ffprobe 结束后才写库。全库一大时，用户会长时间
+        # 看不到任何媒体流变化，而且一次中断会丢掉已经解析出的结果。按
+        # Helper 批次边解析边写入，既能让 Plex 逐步看到结果，也能让重跑
+        # 只处理尚未写入的 Part。
         payloads: List[Dict[str, Any]] = []
         unresolved_files: List[str] = []
+
+        def flush_payloads() -> None:
+            if not payloads:
+                return
+            batch = payloads[:]
+            payloads.clear()
+            for item in batch:
+                item.pop("source", None)
+                item.pop("probe_route", None)
+            self._write_payloads(
+                batch,
+                summary,
+                "全量补全",
+                progress_cb=progress_cb,
+            )
+
         with ThreadPoolExecutor(max_workers=self._concurrency) as pool:
             futures = {pool.submit(self._resolve_one, p): p for p in all_parts}
             done = 0
             for fut in as_completed(futures):
                 done += 1
                 src_part = futures[fut]
-                info = fut.result()
+                try:
+                    info = fut.result()
+                except Exception as exc:
+                    logger.debug(
+                        "全量补全单个 Part 解析失败 part_id=%s: %s",
+                        src_part.get("part_id"),
+                        exc,
+                    )
+                    info = None
                 if info:
                     payloads.append(info)
                     summary["resolved"] += 1
@@ -497,24 +526,27 @@ class MediaInfoCompleter:
                     unresolved_files.append(
                         src_part.get("file") or str(src_part.get("part_id"))
                     )
+                if len(payloads) >= self._write_batch_size:
+                    flush_payloads()
                 if progress_cb and done % 10 == 0:
                     progress_cb(
-                        {"phase": "resolving", "done": done, "total": len(all_parts)}
+                        {
+                            "phase": "resolving",
+                            "done": done,
+                            "total": len(all_parts),
+                            "resolved": summary.get("resolved", 0),
+                            "unresolved": summary.get("unresolved", 0),
+                            "gateway_hits": summary.get("gateway_hits", 0),
+                            "direct_fallback_hits": summary.get(
+                                "direct_fallback_hits", 0
+                            ),
+                        }
                     )
 
+        flush_payloads()
         self._log_unresolved("全量补全", unresolved_files)
 
-        # 3. 写入 helper（去掉 source 字段再发）
-        for p in payloads:
-            p.pop("source", None)
-            p.pop("probe_route", None)
-        if payloads:
-            self._write_payloads(
-                payloads,
-                summary,
-                "全量补全",
-                progress_cb=progress_cb,
-            )
+        # 3. 所有候选已按批次写入 helper；这里仅计算最终统计。
         if summary["total_strm_parts"] is not None:
             # 全库统计场景下，未解析和写入失败的候选就是扫描结束后仍缺失的项。
             pending_after = max(

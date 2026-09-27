@@ -1,4 +1,5 @@
 from base64 import b64encode, b64decode
+import asyncio
 from io import BytesIO
 from datetime import datetime
 from dataclasses import asdict
@@ -1080,6 +1081,35 @@ class Api:
         stream_context = None
         upstream = None
         head_probe = False
+        stream_closed = False
+        close_lock = asyncio.Lock()
+
+        async def close_stream() -> None:
+            """Close one upstream stream at most once.
+
+            ffprobe and players are allowed to stop reading a bounded Range
+            response early.  Starlette may then close the response generator
+            while httpx is still unwinding ``aiter_raw``; a second close can
+            otherwise raise ``anext(): asynchronous generator is already
+            running`` and leave a noisy unhandled task behind.
+            """
+
+            nonlocal stream_context, stream_closed
+            if stream_context is None or stream_closed:
+                return
+            async with close_lock:
+                if stream_context is None or stream_closed:
+                    return
+                context = stream_context
+                stream_closed = True
+                stream_context = None
+                try:
+                    await context.__aexit__(None, None, None)
+                except RuntimeError as exc:
+                    if "asynchronous generator is already running" not in str(exc):
+                        raise
+                    logger.debug("【媒体代理】上游响应提前关闭，跳过重复流清理")
+
         try:
             stream_context = client.stream(
                 method,
@@ -1093,7 +1123,7 @@ class Api:
                 or not upstream.headers.get("Content-Length")
                 and not upstream.headers.get("Content-Range")
             ):
-                await stream_context.__aexit__(None, None, None)
+                await close_stream()
                 request_headers["Range"] = "bytes=0-0"
                 stream_context = client.stream(
                     "GET",
@@ -1101,6 +1131,7 @@ class Api:
                     headers=request_headers,
                     timeout=None,
                 )
+                stream_closed = False
                 upstream = await stream_context.__aenter__()
                 head_probe = True
 
@@ -1119,8 +1150,7 @@ class Api:
                 response_status = status.HTTP_200_OK
 
             if method == "HEAD" or not (200 <= upstream.status_code < 400):
-                await stream_context.__aexit__(None, None, None)
-                stream_context = None
+                await close_stream()
                 return Response(status_code=response_status, headers=response_headers)
 
             async def content_iterator():
@@ -1128,7 +1158,7 @@ class Api:
                     async for chunk in upstream.aiter_raw():
                         yield chunk
                 finally:
-                    await stream_context.__aexit__(None, None, None)
+                    await close_stream()
 
             return StreamingResponse(
                 content_iterator(),
@@ -1138,7 +1168,7 @@ class Api:
         except Exception as exc:
             if stream_context is not None and upstream is not None:
                 try:
-                    await stream_context.__aexit__(None, None, None)
+                    await close_stream()
                 except Exception:
                     pass
             logger.warning("【媒体代理】上游流转发失败: %s", exc)

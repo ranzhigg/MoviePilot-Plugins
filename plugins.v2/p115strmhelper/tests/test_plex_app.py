@@ -322,5 +322,58 @@ class MediaInfoCompleterTest(unittest.TestCase):
         self.assertEqual(summary["pending_after"], 0)
         self.assertEqual(summary["completed_after"], 3)
 
+    def test_full_scan_writes_batches_while_resolving(self) -> None:
+        """全库补全应边探测边写入，而不是等全部 ffprobe 结束。"""
+        module = self.module
+        events = []
+
+        class PlexStub:
+            def collect_strm_parts(self, section_key: str, only_missing: bool = True):
+                del section_key, only_missing
+                return [
+                    {"part_id": 1, "file": "/media/1.strm"},
+                    {"part_id": 2, "file": "/media/2.strm"},
+                    {"part_id": 3, "file": "/media/3.strm"},
+                ]
+
+        class HelperStub:
+            def part_status(self, part_ids, batch_size=500):
+                del batch_size
+                return {
+                    str(part_id): {"duration": 0, "streams": 0}
+                    for part_id in part_ids
+                }
+
+            def write_batch(self, items, force=False):
+                del force
+                events.append(f"write:{items[0]['part_id']}")
+                return {
+                    "ok": len(items),
+                    "results": [
+                        {"part_id": item["part_id"], "success": True}
+                        for item in items
+                    ],
+                }
+
+        class ProbeStub:
+            def find_streams_by_name(self, file_path: str):
+                events.append(f"probe:{file_path.rsplit('/', 1)[-1]}")
+                return {"source": "ffprobe", "streams": [{"stream_type": 1}]}
+
+        completer = module.MediaInfoCompleter(
+            plex=PlexStub(),
+            helper=HelperStub(),
+            emby=None,
+            use_emby=False,
+            ffprobe=ProbeStub(),
+            use_ffprobe=True,
+            concurrency=1,
+            write_batch_size=1,
+        )
+        summary = completer.run(["1"], full_scan=True)
+
+        self.assertEqual(summary["written_ok"], 3)
+        self.assertLess(events.index("write:1"), events.index("probe:3.strm"))
+
 if __name__ == "__main__":
     unittest.main()

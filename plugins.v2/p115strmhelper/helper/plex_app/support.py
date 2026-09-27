@@ -204,6 +204,7 @@ class PlexAppSupport:
                 "source": source,
                 "queued_at": queued_at,
                 "full_scan": bool(full_scan),
+                "progress": {"phase": "queued", "done": 0, "total": 0},
             }
 
         def worker() -> None:
@@ -306,7 +307,11 @@ class PlexAppSupport:
                     if key in event
                 }
                 with self._full_completion_lock:
-                    self._full_completion_state["progress"] = safe
+                    progress = dict(
+                        self._full_completion_state.get("progress") or {}
+                    )
+                    progress.update(safe)
+                    self._full_completion_state["progress"] = progress
 
             summary = completer.run(
                 keys,
@@ -816,6 +821,26 @@ class PlexAppSupport:
             "last_scan_ts": last_result.get("ts"),
             "selected_sections": last_result.get("selected_sections") or [],
         }
+        # 补全任务运行期间，最后一次完整汇总仍然是上一轮结果；把当前
+        # 计数型进度单独暴露给数据看板，避免面板长时间显示旧的 0/候选。
+        progress = completion.get("progress")
+        if isinstance(progress, dict):
+            dashboard["progress"] = dict(progress)
+            dashboard["progress_phase"] = progress.get("phase")
+            dashboard["progress_done"] = progress.get("done")
+            dashboard["progress_total"] = progress.get("total")
+            for key in (
+                "resolved",
+                "unresolved",
+                "written_ok",
+                "write_failed",
+                "gateway_hits",
+                "direct_fallback_hits",
+                "pending_after",
+                "completed_after",
+            ):
+                if key in progress:
+                    dashboard[f"progress_{key}"] = progress[key]
         return {
             "success": True,
             "completion": completion,
