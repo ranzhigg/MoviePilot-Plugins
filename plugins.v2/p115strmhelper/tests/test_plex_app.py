@@ -10,6 +10,7 @@ import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 
 PLEX_APP_DIR = Path(__file__).resolve().parents[1] / "helper" / "plex_app"
@@ -101,6 +102,25 @@ class FfprobeSourceTest(unittest.TestCase):
             assert result is not None
             self.assertEqual(result["probe_route"], "media_proxy")
             self.assertIn("/media_proxy", calls[0])
+            self.assertEqual(parse_qs(urlsplit(calls[0]).query)["probe"], ["1"])
+
+    def test_ffprobe_uses_bounded_network_options(self) -> None:
+        completed = types.SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"format":{"format_name":"matroska"},'
+                '"streams":[{"codec_type":"video","codec_name":"h264"}]}'
+            ),
+        )
+        with patch.object(ffprobe_module.subprocess, "run", return_value=completed) as run:
+            result = ffprobe_module.ffprobe_url(
+                "https://example.invalid/movie.mkv", timeout=5
+            )
+
+        self.assertIsNotNone(result)
+        command = run.call_args.args[0]
+        self.assertIn("-nostdin", command)
+        self.assertEqual(command[command.index("-rw_timeout") + 1], "5000000")
 
 
 class MediaInfoCompleterTest(unittest.TestCase):

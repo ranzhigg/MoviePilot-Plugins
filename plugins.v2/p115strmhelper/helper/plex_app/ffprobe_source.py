@@ -307,8 +307,13 @@ def ffprobe_url(
         timeout_value = max(1.0, float(timeout))
     except (TypeError, ValueError):
         timeout_value = 40.0
+    # ffprobe may otherwise keep an HTTP connection alive while the process
+    # level timeout is waiting.  Keep the network timeout bounded as well and
+    # never let it read from the parent process stdin.
+    rw_timeout = max(1, int(timeout_value * 1_000_000))
     command = [
         executable,
+        "-nostdin",
         "-v",
         "error",
         "-print_format",
@@ -319,6 +324,8 @@ def ffprobe_url(
         "10000000",
         "-probesize",
         "10000000",
+        "-rw_timeout",
+        str(rw_timeout),
         url,
     ]
     try:
@@ -345,6 +352,21 @@ def ffprobe_url(
         logger.debug("ffprobe JSON 解析失败: %s", exc)
         return None
     return _normalize_ffprobe(result)
+
+
+def _media_proxy_probe_url(url: str) -> str:
+    """标记媒体网关探测请求，让网关把开放式 Range 收敛为有界 Range。"""
+    try:
+        parts = urlsplit(url)
+        query = parse_qsl(parts.query, keep_blank_values=True)
+        if any(key == "probe" for key, _ in query):
+            return url
+        query.append(("probe", "1"))
+        return urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+        )
+    except (TypeError, ValueError):
+        return url
 
 
 def _direct_probe_url(url: str) -> str:
@@ -429,7 +451,7 @@ class FfprobeSource:
         if callable(build_media_proxy_url):
             gateway_url = build_media_proxy_url(url)
             if gateway_url:
-                candidates.append(("media_proxy", gateway_url))
+                candidates.append(("media_proxy", _media_proxy_probe_url(gateway_url)))
         direct_url = _direct_probe_url(url)
         candidates.append(("direct", direct_url))
 

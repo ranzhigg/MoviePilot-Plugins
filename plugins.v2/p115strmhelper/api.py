@@ -87,6 +87,9 @@ from app.core.cache import cached, TTLCache
 from app.helper.mediaserver import MediaServerHelper
 
 
+_MEDIA_PROXY_PROBE_BYTES = 16 * 1024 * 1024
+
+
 @sentry_manager.capture_all_class_exceptions
 class Api:
     """
@@ -954,7 +957,17 @@ class Api:
         return headers
 
     @staticmethod
-    def _media_proxy_request_headers(request: Request) -> Dict[str, str]:
+    def _bounded_media_probe_range(value: str) -> str:
+        """将 ffprobe 的开放式 Range 固定为可正常转发的有限窗口。"""
+        normalised = "".join(str(value or "").split()).lower()
+        if normalised == "bytes=0-":
+            return f"bytes=0-{_MEDIA_PROXY_PROBE_BYTES - 1}"
+        return value
+
+    @staticmethod
+    def _media_proxy_request_headers(
+        request: Request, *, probe_mode: bool = False
+    ) -> Dict[str, str]:
         """仅转发 Range、缓存协商和 UA，禁止将客户端凭据传到 115"""
         headers = {"Accept-Encoding": "identity"}
         for name in (
@@ -966,6 +979,8 @@ class Api:
         ):
             value = request.headers.get(name)
             if value:
+                if name == "range" and probe_mode:
+                    value = Api._bounded_media_probe_range(value)
                 headers[name.title()] = value
         return headers
 
@@ -1002,6 +1017,9 @@ class Api:
                     "Invalid media proxy token", status_code=status.HTTP_403_FORBIDDEN
                 )
 
+        # This flag is internal to the MoviePilot media gateway.  It is not
+        # forwarded to 115 and is only enabled by the Plex ffprobe candidate.
+        probe_mode = request.query_params.get("probe") == "1"
         user_agent = request.headers.get("User-Agent") or ""
         try:
             if share_code:
@@ -1042,7 +1060,10 @@ class Api:
             try:
                 self._plex_app_support.enqueue_media_proxy_probe(
                     pickcode,
-                    str(url),
+                    # Keep playback-triggered probing on the signed gateway
+                    # path.  Passing the raw CDN URL made ffprobe bypass the
+                    # bounded Range handling below and also broke observability.
+                    str(request.url),
                     str(url["file_name"] or file_name),
                     share_code=share_code,
                     receive_code=receive_code,
@@ -1052,7 +1073,9 @@ class Api:
                 logger.debug("【媒体代理】排队 Plex 探测失败: %s", exc)
 
         client = servicer.redirect.http_client()
-        request_headers = self._media_proxy_request_headers(request)
+        request_headers = self._media_proxy_request_headers(
+            request, probe_mode=probe_mode
+        )
         method = "HEAD" if request.method.upper() == "HEAD" else "GET"
         stream_context = None
         upstream = None
