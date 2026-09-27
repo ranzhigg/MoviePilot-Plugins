@@ -10,9 +10,6 @@
       <v-tab value="tab-same-playback" class="sub-tab">
         <v-icon size="small" start>mdi:code-block-parentheses</v-icon>多端播放
       </v-tab>
-      <v-tab value="tab-plex-app" class="sub-tab">
-        <v-icon size="small" start>mdi-plex</v-icon>Plex App 播放
-      </v-tab>
       <v-tab value="tab-p115-checkin" class="sub-tab">
         <v-icon size="small" start>mdi-check-circle-outline</v-icon>115 签到
       </v-tab>
@@ -158,9 +155,6 @@
             </div>
           </v-alert>
         </v-card-text>
-      </v-window-item>
-      <v-window-item value="tab-plex-app">
-        <PlexAppSection />
       </v-window-item>
       <v-window-item value="tab-p115-checkin">
         <v-card-text>
@@ -437,8 +431,6 @@
 
 <script setup>
 import { ref, inject, watch, computed, reactive } from 'vue';
-import PlexAppSection from './PlexAppSection.vue';
-
 const otherSubTab = ref('tab-sync-del');
 
 const config = inject('config');

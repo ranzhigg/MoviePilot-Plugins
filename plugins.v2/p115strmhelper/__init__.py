@@ -79,7 +79,6 @@ from .utils.path import PathUtils
 from .utils.offline_link import OfflineLinkResolver
 from .utils.sentry import sentry_manager
 from .helper.share.share_links import ShareLinkResolver
-from .helper.plex_app import PlexAppSupport
 from .utils.rename_dict import RenameDictUtils
 from .utils.url import UrlUtils
 
@@ -168,8 +167,6 @@ class P115StrmHelper(_PluginBase):
         """
         super().__init__()
 
-        self.plex_app_support = PlexAppSupport()
-
         # 初始化配置项
         configer.load_from_dict(config or {})
 
@@ -190,7 +187,7 @@ class P115StrmHelper(_PluginBase):
         """
         初始化插件
         """
-        self.api = Api(client=None, plex_app_support=self.plex_app_support)
+        self.api = Api(client=None)
 
         if config:
             configer.update_config(config)
@@ -205,10 +202,7 @@ class P115StrmHelper(_PluginBase):
             self.init_database()
 
             if servicer.init_service():
-                self.api = Api(
-                    client=servicer.client,
-                    plex_app_support=self.plex_app_support,
-                )
+                self.api = Api(client=servicer.client)
 
             U115Patcher().enable()
             P115DiskPatcher().enable()
@@ -464,41 +458,6 @@ class P115StrmHelper(_PluginBase):
                 "methods": ["GET"],
                 "auth": "bear",
                 "summary": "获取配置",
-            },
-            {
-                "path": "/plex_app/sections",
-                "endpoint": self.plex_app_sections_api,
-                "methods": ["GET"],
-                "auth": "bear",
-                "summary": "获取 Plex 媒体库",
-            },
-            {
-                "path": "/plex_app/helper_check",
-                "endpoint": self.plex_app_helper_check_api,
-                "methods": ["GET"],
-                "auth": "bear",
-                "summary": "检查 Plex MediaInfo Helper",
-            },
-            {
-                "path": "/plex_app/complete",
-                "endpoint": self.plex_app_complete_api,
-                "methods": ["POST"],
-                "auth": "bear",
-                "summary": "补全 Plex App 媒体信息",
-            },
-            {
-                "path": "/plex_app/result",
-                "endpoint": self.plex_app_result_api,
-                "methods": ["GET"],
-                "auth": "bear",
-                "summary": "获取 Plex App 补全结果",
-            },
-            {
-                "path": "/plex_app/webhook",
-                "endpoint": self.plex_app_webhook_api,
-                "methods": ["POST"],
-                "auth": "apikey",
-                "summary": "接收 Plex 入库/播放/停止 Webhook",
             },
             {
                 "path": "/get_machine_id",
@@ -996,31 +955,6 @@ class P115StrmHelper(_PluginBase):
                     "kwargs": {},
                 }
             )
-        if configer.enabled and configer.plex_app_enabled and configer.plex_app_helper_url:
-            cron_service.append(
-                {
-                    "id": "P115StrmHelper_plex_app_helper_health",
-                    "name": "Plex App Helper 健康检查",
-                    "trigger": CronTrigger.from_crontab("*/5 * * * *"),
-                    "func": self.plex_app_support.helper_health_tick,
-                    "kwargs": {},
-                }
-            )
-        if (
-            configer.enabled
-            and configer.plex_app_enabled
-            and configer.plex_app_helper_url
-            and configer.plex_app_auto_completion_enabled
-        ):
-            cron_service.append(
-                {
-                    "id": "P115StrmHelper_plex_app_auto_completion",
-                    "name": "Plex App 新媒体自动补全",
-                    "trigger": CronTrigger.from_crontab("*/15 * * * *"),
-                    "func": self.plex_app_support.auto_completion_tick,
-                    "kwargs": {},
-                }
-            )
         if configer.strm_backup_enabled and configer.strm_backup_items:
             for backup_item in configer.strm_backup_items:
                 if (
@@ -1061,56 +995,6 @@ class P115StrmHelper(_PluginBase):
         """
         return None
 
-    def plex_app_sections_api(self) -> Dict[str, Any]:
-        """返回 Plex 媒体库列表，供 Plex App 配置页选择。"""
-        return self.plex_app_support.list_sections()
-
-    def plex_app_helper_check_api(self) -> Dict[str, Any]:
-        """检查 Plex MediaInfo Helper 连通性。"""
-        return self.plex_app_support.helper_check()
-
-    def plex_app_complete_api(
-        self, payload: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """后台触发 Plex STRM 媒体信息补全，避免长时间占用 API 请求。"""
-        payload = payload or {}
-        section_keys = payload.get("section_keys")
-        if isinstance(section_keys, str):
-            section_keys = [
-                item.strip()
-                for item in section_keys.replace("\n", ",").split(",")
-                if item.strip()
-            ]
-        if not isinstance(section_keys, list):
-            section_keys = None
-        return self.plex_app_support.start_completion(
-            source="api",
-            force_write=bool(payload.get("force_write", False)),
-            section_keys=section_keys,
-            full_scan=bool(payload.get("full_scan", False)),
-        )
-
-    def plex_app_result_api(self) -> Dict[str, Any]:
-        """返回最近的 Plex App 补全、播放探测和标记分析结果。"""
-        return self.plex_app_support.result()
-
-    async def plex_app_webhook_api(self, request: Request) -> Dict[str, Any]:
-        """接收 Plex Webhook，按播放事件分析标记或补全媒体信息。"""
-        payload_text = ""
-        try:
-            form = await request.form()
-            payload = form.get("payload")
-            if isinstance(payload, str):
-                payload_text = payload
-        except Exception:
-            try:
-                payload_text = (await request.body()).decode("utf-8", "replace")
-            except Exception:
-                payload_text = ""
-        if not payload_text:
-            return {"success": False, "error": "空 payload"}
-        return self.plex_app_support.webhook_payload(payload_text)
-
     def get_dashboard_meta(self) -> Optional[List[Dict[str, str]]]:
         """
         多仪表盘
@@ -1118,7 +1002,6 @@ class P115StrmHelper(_PluginBase):
         return [
             {"key": "strm", "name": "STRM 同步执行记录"},
             {"key": "status", "name": "运行状态与账户"},
-            {"key": "plex_app", "name": "Plex 媒体信息补全"},
             {"key": "sync_del", "name": "同步删除历史"},
             {"key": "manual_transfer", "name": "网盘整理"},
             {"key": "full_sync_actions", "name": "全量同步"},
@@ -1153,242 +1036,6 @@ class P115StrmHelper(_PluginBase):
                     "border": True,
                 },
                 None,
-            )
-        if k == "plex_app":
-            snapshot = self.plex_app_support.result()
-            dashboard = snapshot.get("dashboard") or {}
-            completion = snapshot.get("completion") or {}
-            progress = dashboard.get("progress") or {}
-
-            status = str(dashboard.get("status") or completion.get("status") or "idle")
-            active = status in ("queued", "running")
-
-            def number(name: str, default: int = 0) -> int:
-                if active and name in progress:
-                    value = progress.get(name)
-                else:
-                    value = dashboard.get(name)
-                    if value is None:
-                        value = progress.get(name)
-                try:
-                    return int(value or default)
-                except (TypeError, ValueError):
-                    return default
-
-            def text(value: Any, default: str = "0") -> str:
-                return default if value is None else str(value)
-
-            status_labels = {
-                "idle": ("空闲", "info"),
-                "queued": ("排队中", "info"),
-                "running": ("运行中", "primary"),
-                "done": ("已完成", "success"),
-                "failed": ("失败", "error"),
-            }
-            status_label, status_color = status_labels.get(status, (status, "info"))
-            # progress.total/done 在写入阶段表示“当前 Helper 批次”（通常是
-            # 20 条），不能直接拿来作为全库进度。全库面板应始终以候选项
-            # missing_before 和已解析/未解析的累计值计算。
-            progress_has_resolution = active and (
-                "resolved" in progress or "unresolved" in progress
-            )
-            total = (
-                number("missing_before")
-                or number("strm_parts")
-                or number("total_strm_parts")
-                or number("progress_total")
-            )
-            done = (
-                number("resolved") + number("unresolved")
-                if progress_has_resolution
-                else number("progress_done")
-            )
-            if not total:
-                total = number("missing_before")
-            percent = min(100, max(0, int(done * 100 / total))) if total else 0
-            if status == "done" and total:
-                percent = 100
-
-            if active:
-                progress_total = (
-                    number("missing_before")
-                    or number("strm_parts")
-                    or number("progress_total")
-                )
-                progress_done = (
-                    number("resolved") + number("unresolved")
-                    if progress_has_resolution
-                    else number("progress_done")
-                )
-                progress_percent = (
-                    min(100, max(0, int(progress_done * 100 / progress_total)))
-                    if progress_total
-                    else 0
-                )
-                progress_text = (
-                    f"本轮补缺 {progress_done:,} / {progress_total:,}（{progress_percent}%）"
-                    if progress_total
-                    else "等待扫描初始化"
-                )
-                percent = progress_percent
-                pending_value = max(0, progress_total - number("written_ok"))
-                pending_label = "本轮剩余"
-                pending_note = (
-                    f"已处理 {progress_done:,}，未解析 {number('unresolved'):,}"
-                )
-            else:
-                progress_text = (
-                    f"{done:,} / {total:,}（{percent}%）"
-                    if total
-                    else "等待扫描初始化"
-                )
-                pending_value = number("unresolved")
-                pending_label = "仍待处理"
-                pending_note = f"扫描前缺失 {number('missing_before'):,}"
-
-            completed_after = number("completed_after")
-            if active and "completed_after" not in progress:
-                completed_after = number("completed_before") + number("written_ok")
-
-            def metric_card(
-                label: str, value: Any, note: str = "", color: Optional[str] = None
-            ) -> Dict[str, Any]:
-                card_props: Dict[str, Any] = {"variant": "tonal"}
-                if color:
-                    card_props["color"] = color
-                content: List[Dict[str, Any]] = [
-                    {
-                        "component": "div",
-                        "props": {"class": "text-caption text-medium-emphasis"},
-                        "text": label,
-                    },
-                    {
-                        "component": "div",
-                        "props": {"class": "text-h5 font-weight-bold mt-1"},
-                        "text": text(value),
-                    },
-                ]
-                if note:
-                    content.append(
-                        {
-                            "component": "div",
-                            "props": {"class": "text-caption mt-1"},
-                            "text": note,
-                        }
-                    )
-                return {
-                    "component": "VCol",
-                    "props": {"cols": 12, "sm": 6, "md": 3},
-                    "content": [
-                        {
-                            "component": "VCard",
-                            "props": card_props,
-                            "content": [{"component": "VCardText", "content": content}],
-                        }
-                    ],
-                }
-
-            selected_sections = dashboard.get("selected_sections") or []
-            if not selected_sections:
-                selected_sections = self.plex_app_support._selected_sections()
-            elements = [
-                {
-                    "component": "VRow",
-                    "content": [
-                        metric_card(
-                            "全库 STRM",
-                            number("total_strm_parts"),
-                            "全部媒体分片",
-                            "primary",
-                        ),
-                        metric_card(
-                            "已解析",
-                            number("resolved"),
-                            f"网关 {number('gateway_hits')} / 直连 {number('direct_fallback_hits')}",
-                            "success",
-                        ),
-                        metric_card(
-                            "已写入 Helper",
-                            number("written_ok"),
-                            f"失败 {number('write_failed')}",
-                            "success",
-                        ),
-                        metric_card(
-                            pending_label,
-                            pending_value,
-                            pending_note,
-                            "warning",
-                        ),
-                    ],
-                },
-                {
-                    "component": "VRow",
-                    "content": [
-                        {
-                            "component": "VCol",
-                            "props": {"cols": 12},
-                            "content": [
-                                {
-                                    "component": "VAlert",
-                                    "props": {
-                                        "type": status_color,
-                                        "variant": "tonal",
-                                        "class": "mb-2",
-                                    },
-                                    "text": (
-                                        f"状态：{status_label} · {progress_text} · "
-                                        f"媒体库 {len(selected_sections)} 个 · 自动刷新 10 秒"
-                                    ),
-                                },
-                                {
-                                    "component": "VProgressLinear",
-                                    "props": {
-                                        "model-value": percent,
-                                        "color": status_color,
-                                        "height": 8,
-                                        "rounded": True,
-                                    },
-                                },
-                            ],
-                        }
-                    ],
-                },
-                {
-                    "component": "VRow",
-                    "content": [
-                        metric_card(
-                            "扫描前已完整",
-                            number("completed_before"),
-                            "已有媒体流信息",
-                        ),
-                        metric_card(
-                            "扫描后已完整",
-                            completed_after,
-                            "当前已写入推算" if active else "任务完成后更新",
-                        ),
-                        metric_card(
-                            "扫描候选",
-                            number("missing_before"),
-                            "本轮仅补缺失项",
-                        ),
-                        metric_card(
-                            "扫描失败",
-                            number("write_failed"),
-                            "写入或解析失败",
-                            "error" if number("write_failed") else None,
-                        ),
-                    ],
-                },
-            ]
-            return (
-                {"cols": 12},
-                {
-                    "title": "Plex 媒体信息补全",
-                    "subtitle": self.plugin_name,
-                    "border": True,
-                    "refresh": 10,
-                },
-                elements,
             )
         if k == "manual_transfer":
             return (

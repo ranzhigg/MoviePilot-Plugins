@@ -97,9 +97,8 @@ class Api:
     插件 API
     """
 
-    def __init__(self, client: Optional[P115Client], plex_app_support=None):
+    def __init__(self, client: Optional[P115Client]):
         self._client = client
-        self._plex_app_support = plex_app_support
 
         self.browse_dir_pan_api_cache = TTLCache(
             maxsize=1024, ttl=120, region="p115strmhelper_api_browse_dir_api"
@@ -1056,22 +1055,6 @@ class Api:
                 "获取 115 下载地址失败",
                 status_code=status.HTTP_502_BAD_GATEWAY,
             )
-
-        if self._plex_app_support and (pickcode or share_code):
-            try:
-                self._plex_app_support.enqueue_media_proxy_probe(
-                    pickcode,
-                    # Keep playback-triggered probing on the signed gateway
-                    # path.  Passing the raw CDN URL made ffprobe bypass the
-                    # bounded Range handling below and also broke observability.
-                    str(request.url),
-                    str(url["file_name"] or file_name),
-                    share_code=share_code,
-                    receive_code=receive_code,
-                    file_id=str(id),
-                )
-            except Exception as exc:
-                logger.debug("【媒体代理】排队 Plex 探测失败: %s", exc)
 
         client = servicer.redirect.http_client()
         request_headers = self._media_proxy_request_headers(
