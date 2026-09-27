@@ -307,13 +307,12 @@ def ffprobe_url(
         timeout_value = max(1.0, float(timeout))
     except (TypeError, ValueError):
         timeout_value = 40.0
-    # ffprobe may otherwise keep an HTTP connection alive while the process
-    # level timeout is waiting.  Keep the network timeout bounded as well and
-    # never let it read from the parent process stdin.
+    # Keep ffprobe's network timeout bounded as well as the process-level
+    # timeout.  Do not pass ``-nostdin`` here: unlike ffmpeg, the ffprobe
+    # binary shipped in the MoviePilot image does not support that option.
     rw_timeout = max(1, int(timeout_value * 1_000_000))
     command = [
         executable,
-        "-nostdin",
         "-v",
         "error",
         "-print_format",

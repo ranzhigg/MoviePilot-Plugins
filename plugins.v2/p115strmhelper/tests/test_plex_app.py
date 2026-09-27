@@ -119,7 +119,7 @@ class FfprobeSourceTest(unittest.TestCase):
 
         self.assertIsNotNone(result)
         command = run.call_args.args[0]
-        self.assertIn("-nostdin", command)
+        self.assertNotIn("-nostdin", command)
         self.assertEqual(command[command.index("-rw_timeout") + 1], "5000000")
 
 
