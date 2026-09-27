@@ -1160,10 +1160,16 @@ class P115StrmHelper(_PluginBase):
             completion = snapshot.get("completion") or {}
             progress = dashboard.get("progress") or {}
 
+            status = str(dashboard.get("status") or completion.get("status") or "idle")
+            active = status in ("queued", "running")
+
             def number(name: str, default: int = 0) -> int:
-                value = dashboard.get(name)
-                if value is None:
+                if active and name in progress:
                     value = progress.get(name)
+                else:
+                    value = dashboard.get(name)
+                    if value is None:
+                        value = progress.get(name)
                 try:
                     return int(value or default)
                 except (TypeError, ValueError):
@@ -1172,7 +1178,6 @@ class P115StrmHelper(_PluginBase):
             def text(value: Any, default: str = "0") -> str:
                 return default if value is None else str(value)
 
-            status = str(dashboard.get("status") or completion.get("status") or "idle")
             status_labels = {
                 "idle": ("空闲", "info"),
                 "queued": ("排队中", "info"),
@@ -1188,6 +1193,37 @@ class P115StrmHelper(_PluginBase):
             percent = min(100, max(0, int(done * 100 / total))) if total else 0
             if status == "done" and total:
                 percent = 100
+
+            if active:
+                progress_total = number("progress_total") or number("missing_before")
+                progress_done = number("progress_done")
+                progress_percent = (
+                    min(100, max(0, int(progress_done * 100 / progress_total)))
+                    if progress_total
+                    else 0
+                )
+                progress_text = (
+                    f"本轮补缺 {progress_done:,} / {progress_total:,}（{progress_percent}%）"
+                    if progress_total
+                    else "等待扫描初始化"
+                )
+                percent = progress_percent
+                pending_value = max(0, progress_total - progress_done)
+                pending_label = "本轮剩余"
+                pending_note = f"已扫描未命中 {number('unresolved'):,}"
+            else:
+                progress_text = (
+                    f"{done:,} / {total:,}（{percent}%）"
+                    if total
+                    else "等待扫描初始化"
+                )
+                pending_value = number("unresolved")
+                pending_label = "仍待处理"
+                pending_note = f"扫描前缺失 {number('missing_before'):,}"
+
+            completed_after = number("completed_after")
+            if active and "completed_after" not in progress:
+                completed_after = number("completed_before") + number("written_ok")
 
             def metric_card(
                 label: str, value: Any, note: str = "", color: Optional[str] = None
@@ -1227,7 +1263,6 @@ class P115StrmHelper(_PluginBase):
                     ],
                 }
 
-            progress_text = f"{done:,} / {total:,}（{percent}%）" if total else "等待扫描初始化"
             selected_sections = dashboard.get("selected_sections") or []
             if not selected_sections:
                 selected_sections = self.plex_app_support._selected_sections()
@@ -1254,9 +1289,9 @@ class P115StrmHelper(_PluginBase):
                             "success",
                         ),
                         metric_card(
-                            "仍待处理",
-                            number("unresolved"),
-                            f"扫描前缺失 {number('missing_before')}",
+                            pending_label,
+                            pending_value,
+                            pending_note,
                             "warning",
                         ),
                     ],
@@ -1303,8 +1338,8 @@ class P115StrmHelper(_PluginBase):
                         ),
                         metric_card(
                             "扫描后已完整",
-                            number("completed_after"),
-                            "任务完成后更新",
+                            completed_after,
+                            "当前已写入推算" if active else "任务完成后更新",
                         ),
                         metric_card(
                             "扫描候选",
