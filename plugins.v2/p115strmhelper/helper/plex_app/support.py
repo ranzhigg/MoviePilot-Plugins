@@ -80,9 +80,11 @@ class PlexAppSupport:
         except (TypeError, ValueError):
             timeout = 40
         try:
-            concurrency = max(1, min(16, int(cls._value("concurrency", 3) or 3)))
+            # ffprobe 会同时触发媒体网关和 Plex/Helper 侧的 IO。全库补全
+            # 以稳定写入为优先，硬上限 2，避免把原生 Plex 压到拒绝连接。
+            concurrency = max(1, min(2, int(cls._value("concurrency", 3) or 3)))
         except (TypeError, ValueError):
-            concurrency = 3
+            concurrency = 2
         try:
             write_batch_size = max(
                 1, min(100, int(cls._value("write_batch_size", 20) or 20))
@@ -274,6 +276,7 @@ class PlexAppSupport:
         """执行指定 Plex 媒体库的 STRM 媒体信息补全。"""
         if not self._task_lock.acquire(blocking=False):
             return {"success": False, "error": "已有 Plex App 补全任务在运行"}
+        completer: Optional[MediaInfoCompleter] = None
         try:
             completer = self._build_completer(force_write=force_write)
             if not completer:
@@ -336,6 +339,11 @@ class PlexAppSupport:
             logger.error("Plex App 全量补全异常: %s", exc, exc_info=True)
             return {"success": False, "error": str(exc)}
         finally:
+            if completer is not None:
+                plex = getattr(completer, "_plex", None)
+                close = getattr(plex, "close", None)
+                if callable(close):
+                    close()
             self._task_lock.release()
 
     def _allowed_rating_key(self, rating_key: str) -> bool:

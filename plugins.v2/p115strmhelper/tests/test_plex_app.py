@@ -137,7 +137,7 @@ class MediaInfoCompleterTest(unittest.TestCase):
         sys.modules.setdefault("app.sdk.logging", logging_module)
         if "httpx" not in sys.modules:
             httpx = types.ModuleType("httpx")
-            httpx.Client = type("ClientStub", (), {})
+            httpx.Client = type("ClientStub", (), {"__init__": lambda self, **kwargs: None})
             sys.modules["httpx"] = httpx
         package = types.ModuleType("p115_plex_app")
         package.__path__ = [str(PLEX_APP_DIR)]

@@ -9,6 +9,11 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from httpx import Client
 
+try:
+    from httpx import Limits
+except ImportError:  # pragma: no cover - standalone test stub
+    Limits = None
+
 from app.sdk.logging import logger
 
 
@@ -18,6 +23,7 @@ class PlexClient:
     _GET_RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
     _GET_MAX_ATTEMPTS = 3
     _GET_RETRY_DELAYS = (0.35, 0.9)
+    _MAX_CONNECTIONS = 2
 
     def __init__(self, base_url: str, token: str, timeout: float = 30.0) -> None:
         """
@@ -30,6 +36,22 @@ class PlexClient:
         self._base = base_url.rstrip("/")
         self._token = token
         self._timeout = timeout
+        options = {"timeout": self._timeout}
+        if Limits is not None:
+            options["limits"] = Limits(
+                max_connections=self._MAX_CONNECTIONS,
+                max_keepalive_connections=self._MAX_CONNECTIONS,
+            )
+        # Plex 枚举会连续请求数千个 metadata endpoint。每次请求重新建连会
+        # 放大 TCP/TLS 开销，也容易把原生 Plex 推入连接拒绝状态；同一轮扫描
+        # 复用一个有界连接池，并把短暂断开交给下面的退避重试处理。
+        self._client = Client(**options)
+
+    def close(self) -> None:
+        """释放本轮扫描使用的 Plex HTTP 连接池。"""
+        close = getattr(self._client, "close", None)
+        if callable(close):
+            close()
 
     def _get(self, path: str) -> Optional[dict]:
         """
@@ -42,18 +64,17 @@ class PlexClient:
         url = f"{self._base}{path}{sep}X-Plex-Token={quote(self._token, safe='')}"
         for attempt in range(self._GET_MAX_ATTEMPTS):
             try:
-                with Client(timeout=self._timeout) as client:
-                    resp = client.get(url, headers={"Accept": "application/json"})
-                    if resp.status_code == 200:
-                        return resp.json()
-                    if (
-                        resp.status_code in self._GET_RETRYABLE_STATUS
-                        and attempt < self._GET_MAX_ATTEMPTS - 1
-                    ):
-                        sleep(self._GET_RETRY_DELAYS[attempt])
-                        continue
-                    logger.warning("Plex API %s 返回 %s", path, resp.status_code)
-                    return None
+                resp = self._client.get(url, headers={"Accept": "application/json"})
+                if resp.status_code == 200:
+                    return resp.json()
+                if (
+                    resp.status_code in self._GET_RETRYABLE_STATUS
+                    and attempt < self._GET_MAX_ATTEMPTS - 1
+                ):
+                    sleep(self._GET_RETRY_DELAYS[attempt])
+                    continue
+                logger.warning("Plex API %s 返回 %s", path, resp.status_code)
+                return None
             except Exception as e:
                 if attempt < self._GET_MAX_ATTEMPTS - 1:
                     sleep(self._GET_RETRY_DELAYS[attempt])
@@ -77,11 +98,10 @@ class PlexClient:
         sep = "&" if "?" in path else "?"
         url = f"{self._base}{path}{sep}X-Plex-Token={quote(self._token, safe='')}"
         try:
-            with Client(timeout=self._timeout) as client:
-                resp = client.put(url, headers={"Accept": "application/json"})
-                if 200 <= resp.status_code < 300:
-                    return True
-                logger.warning("Plex PUT %s 返回 %s", path, resp.status_code)
+            resp = self._client.put(url, headers={"Accept": "application/json"})
+            if 200 <= resp.status_code < 300:
+                return True
+            logger.warning("Plex PUT %s 返回 %s", path, resp.status_code)
         except Exception as e:
             logger.warning("Plex PUT 请求失败 %s: %s", path, e)
         return False

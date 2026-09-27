@@ -23,15 +23,20 @@ class _Response:
 
 class _FlakyClient:
     attempts = 0
+    created = 0
 
     def __init__(self, **kwargs):
         del kwargs
+        type(self).created += 1
 
     def __enter__(self):
         return self
 
     def __exit__(self, *args):
         return False
+
+    def close(self):
+        return None
 
     def get(self, url, headers=None):
         del url, headers
@@ -79,12 +84,14 @@ def _load_module():
 class PlexClientRetryTest(unittest.TestCase):
     def test_get_retries_transient_disconnect(self):
         _FlakyClient.attempts = 0
+        _FlakyClient.created = 0
         module = _load_module()
         module.PlexClient._GET_RETRY_DELAYS = (0, 0)
         client = module.PlexClient("http://plex.example", "token")
 
         self.assertEqual(client._get("/identity"), {"ok": True})
         self.assertEqual(_FlakyClient.attempts, 3)
+        self.assertEqual(_FlakyClient.created, 1)
 
 
 if __name__ == "__main__":
