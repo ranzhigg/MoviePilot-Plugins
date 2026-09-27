@@ -288,6 +288,7 @@ class PlexAppSupport:
                     for key in (
                         "phase",
                         "count",
+                        "strm_parts",
                         "done",
                         "total",
                         "total_strm_parts",
@@ -827,13 +828,30 @@ class PlexAppSupport:
         if isinstance(progress, dict):
             dashboard["progress"] = dict(progress)
             dashboard["progress_phase"] = progress.get("phase")
-            dashboard["progress_done"] = progress.get("done")
-            dashboard["progress_total"] = progress.get("total")
+            live_status = str(completion.get("status") or "idle")
+            progress_has_resolution = "resolved" in progress or "unresolved" in progress
+            live_done = (
+                int(progress.get("resolved") or 0)
+                + int(progress.get("unresolved") or 0)
+                if progress_has_resolution
+                else progress.get("done")
+            )
+            live_total = (
+                progress.get("missing_before")
+                or progress.get("strm_parts")
+                or progress.get("count")
+                or progress.get("total")
+            )
+            dashboard["progress_done"] = live_done
+            dashboard["progress_total"] = live_total
             # 任务运行期间，last_result 仍然是上一轮完整汇总。把本轮
             # 已产生的计数同步到 dashboard 顶层，避免前端只读顶层字段
             # 时一直显示旧的 0/候选；原始进度仍保留在 progress 下。
-            live_status = str(completion.get("status") or "idle")
             for key in (
+                "total_strm_parts",
+                "completed_before",
+                "missing_before",
+                "strm_parts",
                 "resolved",
                 "unresolved",
                 "written_ok",
@@ -849,6 +867,15 @@ class PlexAppSupport:
                         dashboard[key] = progress[key]
             if live_status in ("queued", "running"):
                 dashboard["full_scan"] = bool(completion.get("full_scan"))
+                if dashboard.get("missing_before") is not None:
+                    written = int(progress.get("written_ok") or 0)
+                    dashboard["pending_after"] = max(
+                        0, int(dashboard["missing_before"] or 0) - written
+                    )
+                    dashboard["completed_after"] = max(
+                        0,
+                        int(dashboard.get("completed_before") or 0) + written,
+                    )
                 dashboard["last_scan_ts"] = completion.get("started_at") or dashboard.get(
                     "last_scan_ts"
                 )

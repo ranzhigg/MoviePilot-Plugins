@@ -87,13 +87,13 @@
               <div class="d-flex flex-wrap gap-2">
                 <v-chip size="small" variant="tonal">扫描候选 {{ formatNumber(candidateCount) }}</v-chip>
                 <v-chip size="small" color="success" variant="tonal">
-                  解析成功 {{ formatNumber(lastResult.resolved) }}
+                  解析成功 {{ formatNumber(resolvedCount) }}
                 </v-chip>
                 <v-chip size="small" color="warning" variant="tonal">
-                  未解析 {{ formatNumber(lastResult.unresolved) }}
+                  未解析 {{ formatNumber(unresolvedCount) }}
                 </v-chip>
-                <v-chip size="small" :color="lastResult.write_failed ? 'error' : 'success'" variant="tonal">
-                  写入失败 {{ formatNumber(lastResult.write_failed) }}
+                <v-chip size="small" :color="writeFailedCount ? 'error' : 'success'" variant="tonal">
+                  写入失败 {{ formatNumber(writeFailedCount) }}
                 </v-chip>
               </div>
               <div v-if="progressTotal > 0 && busy" class="mt-3">
@@ -167,18 +167,53 @@ const dashboard = computed(() => response.value?.dashboard || {});
 const lastResult = computed(() => response.value?.result || {});
 const progress = computed(() => completion.value?.progress || {});
 const busy = computed(() => ["queued", "running"].includes(String(completion.value?.status || "")));
+const countValue = (value, fallback = 0) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const liveCount = (name) => {
+  const value = busy.value
+    ? dashboard.value[name] ?? progress.value[name] ?? lastResult.value[name]
+    : dashboard.value[name] ?? lastResult.value[name];
+  return countValue(value);
+};
+
+const totalStrmParts = computed(() => {
+  const value = busy.value
+    ? progress.value.total_strm_parts ?? dashboard.value.total_strm_parts ?? lastResult.value.total_strm_parts
+    : dashboard.value.total_strm_parts ?? lastResult.value.total_strm_parts;
+  return value === null || value === undefined ? null : countValue(value);
+});
 const hasFullStats = computed(
-  () => dashboard.value.total_strm_parts !== null && dashboard.value.total_strm_parts !== undefined,
+  () => totalStrmParts.value !== null,
 );
-const candidateCount = computed(
-  () => lastResult.value.missing_before ?? lastResult.value.strm_parts ?? 0,
-);
-const pendingCount = computed(
-  () => dashboard.value.pending_after ?? (lastResult.value.unresolved || 0) + (lastResult.value.write_failed || 0),
-);
-const currentCompleted = computed(
-  () => dashboard.value.completed_after ?? null,
-);
+const candidateCount = computed(() => {
+  const value = busy.value
+    ? progress.value.missing_before ?? progress.value.count ?? dashboard.value.missing_before ?? lastResult.value.missing_before
+    : dashboard.value.missing_before ?? lastResult.value.missing_before ?? lastResult.value.strm_parts;
+  return countValue(value);
+});
+const resolvedCount = computed(() => liveCount("resolved"));
+const unresolvedCount = computed(() => liveCount("unresolved"));
+const writtenCount = computed(() => liveCount("written_ok"));
+const writeFailedCount = computed(() => liveCount("write_failed"));
+const pendingCount = computed(() => {
+  if (busy.value) {
+    // “仍待补”只统计尚未成功写入 Helper 的候选；解析完成但尚未 flush
+    // 的小批次也会继续保留在这里，不会提前显示为已完成。
+    return Math.max(0, candidateCount.value - writtenCount.value);
+  }
+  return countValue(dashboard.value.pending_after ?? unresolvedCount.value + writeFailedCount.value);
+});
+const currentCompleted = computed(() => {
+  if (busy.value) {
+    const before = countValue(progress.value.completed_before ?? dashboard.value.completed_before);
+    return before + writtenCount.value;
+  }
+  const value = dashboard.value.completed_after ?? lastResult.value.completed_after;
+  return value === null || value === undefined ? null : countValue(value);
+});
 
 const statusLabel = computed(() => {
   const value = String(completion.value?.status || "idle");
@@ -208,7 +243,7 @@ const scanModeLabel = computed(() => {
 const statCards = computed(() => [
   {
     label: "全库 STRM",
-    value: hasFullStats.value ? formatNumber(dashboard.value.total_strm_parts) : "—",
+    value: hasFullStats.value ? formatNumber(totalStrmParts.value) : "—",
     hint: hasFullStats.value ? "已选 Plex 媒体库" : "需要全库扫描",
     color: "primary",
   },
@@ -220,27 +255,39 @@ const statCards = computed(() => [
   },
   {
     label: "本次成功写入",
-    value: formatNumber(dashboard.value.written_ok ?? lastResult.value.written_ok),
+    value: formatNumber(writtenCount.value),
     hint: `候选 ${formatNumber(candidateCount.value)}`,
     color: "info",
   },
   {
     label: "仍待补",
     value: hasFullStats.value ? formatNumber(pendingCount.value) : "—",
-    hint: hasFullStats.value ? `未解析 ${formatNumber(dashboard.value.unresolved)}` : "等待全库统计",
+    hint: hasFullStats.value ? `未解析 ${formatNumber(unresolvedCount.value)}` : "等待全库统计",
     color: pendingCount.value ? "warning" : "success",
   },
 ]);
 
-const progressTotal = computed(() => Number(progress.value.total || progress.value.count || 0));
-const progressDone = computed(() => Number(progress.value.done || 0));
+const progressTotal = computed(() => {
+  if (!busy.value) return countValue(progress.value.total || progress.value.count);
+  return candidateCount.value;
+});
+const progressDone = computed(() => {
+  if (busy.value && (progress.value.resolved !== undefined || progress.value.unresolved !== undefined)) {
+    return Math.min(progressTotal.value, resolvedCount.value + unresolvedCount.value);
+  }
+  return countValue(progress.value.done);
+});
 const progressPercent = computed(() => {
   if (!progressTotal.value) return 0;
   return Math.min(100, Math.round((progressDone.value / progressTotal.value) * 100));
 });
 const progressLabel = computed(() => {
   const phase = String(progress.value.phase || "");
-  return phase === "writing" ? "正在写入 Helper" : phase === "resolving" ? "正在探测媒体流" : "正在枚举媒体库";
+  return phase === "writing"
+    ? "已处理候选（写入持续进行）"
+    : phase === "resolving"
+      ? "正在探测媒体流"
+      : "正在枚举媒体库";
 });
 const selectedSectionCount = computed(
   () => (dashboard.value.selected_sections || []).length,

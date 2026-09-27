@@ -1186,8 +1186,23 @@ class P115StrmHelper(_PluginBase):
                 "failed": ("失败", "error"),
             }
             status_label, status_color = status_labels.get(status, (status, "info"))
-            total = number("total_strm_parts") or number("progress_total")
-            done = number("progress_done")
+            # progress.total/done 在写入阶段表示“当前 Helper 批次”（通常是
+            # 20 条），不能直接拿来作为全库进度。全库面板应始终以候选项
+            # missing_before 和已解析/未解析的累计值计算。
+            progress_has_resolution = active and (
+                "resolved" in progress or "unresolved" in progress
+            )
+            total = (
+                number("missing_before")
+                or number("strm_parts")
+                or number("total_strm_parts")
+                or number("progress_total")
+            )
+            done = (
+                number("resolved") + number("unresolved")
+                if progress_has_resolution
+                else number("progress_done")
+            )
             if not total:
                 total = number("missing_before")
             percent = min(100, max(0, int(done * 100 / total))) if total else 0
@@ -1195,8 +1210,16 @@ class P115StrmHelper(_PluginBase):
                 percent = 100
 
             if active:
-                progress_total = number("progress_total") or number("missing_before")
-                progress_done = number("progress_done")
+                progress_total = (
+                    number("missing_before")
+                    or number("strm_parts")
+                    or number("progress_total")
+                )
+                progress_done = (
+                    number("resolved") + number("unresolved")
+                    if progress_has_resolution
+                    else number("progress_done")
+                )
                 progress_percent = (
                     min(100, max(0, int(progress_done * 100 / progress_total)))
                     if progress_total
@@ -1208,9 +1231,11 @@ class P115StrmHelper(_PluginBase):
                     else "等待扫描初始化"
                 )
                 percent = progress_percent
-                pending_value = max(0, progress_total - progress_done)
+                pending_value = max(0, progress_total - number("written_ok"))
                 pending_label = "本轮剩余"
-                pending_note = f"已扫描未命中 {number('unresolved'):,}"
+                pending_note = (
+                    f"已处理 {progress_done:,}，未解析 {number('unresolved'):,}"
+                )
             else:
                 progress_text = (
                     f"{done:,} / {total:,}（{percent}%）"

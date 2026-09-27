@@ -193,6 +193,50 @@ class PlexAppSupportTest(unittest.TestCase):
         self.assertFalse(result["metadata_queued"])
         self.assertEqual(_CompleterStub.calls, [("movie-10", 0)])
 
+    def test_active_result_keeps_library_totals_during_batch_writes(self) -> None:
+        """写入批次进行中，结果接口仍应暴露全库候选和累计进度。"""
+        previous_saved = dict(self.configer.saved)
+        try:
+            self.configer.saved["plex_app_last_result"] = {
+                "full_scan": True,
+                "total_strm_parts": 18662,
+                "completed_before": 9542,
+                "missing_before": 9120,
+                "strm_parts": 9120,
+                "pending_after": 9120,
+                "completed_after": 9542,
+            }
+            self.support._full_completion_state = {
+                "status": "running",
+                "full_scan": True,
+                "started_at": 123,
+                "progress": {
+                    "phase": "writing",
+                    "count": 9037,
+                    "done": 20,
+                    "total": 20,
+                    "total_strm_parts": 18662,
+                    "missing_before": 9037,
+                    "completed_before": 9625,
+                    "resolved": 447,
+                    "unresolved": 93,
+                    "written_ok": 440,
+                    "write_failed": 0,
+                },
+            }
+
+            dashboard = self.support.result()["dashboard"]
+
+            self.assertEqual(dashboard["total_strm_parts"], 18662)
+            self.assertEqual(dashboard["missing_before"], 9037)
+            self.assertEqual(dashboard["progress_total"], 9037)
+            self.assertEqual(dashboard["progress_done"], 540)
+            self.assertEqual(dashboard["pending_after"], 8597)
+            self.assertEqual(dashboard["completed_after"], 10065)
+        finally:
+            self.configer.saved.clear()
+            self.configer.saved.update(previous_saved)
+
 
 if __name__ == "__main__":
     unittest.main()
