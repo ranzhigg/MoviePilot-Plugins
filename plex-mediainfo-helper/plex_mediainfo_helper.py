@@ -436,8 +436,45 @@ def write_media_info_batch(
     return ok, results
 
 
+def read_part_status(db_path: str, part_ids: List[int]) -> List[Dict[str, Any]]:
+    """读取 Part 的真实媒体流状态，不修改 Plex 数据库。
+
+    Plex API 的 children 响应经常只有 duration 而没有 Stream 数组，因此这里
+    直接以同机数据库中的 media_streams 行数作为“已补全”依据。
+    """
+    if not part_ids:
+        return []
+    placeholders = ", ".join("?" for _ in part_ids)
+    conn = _open_conn(db_path)
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT
+                mp.id AS part_id,
+                COALESCE(NULLIF(mp.duration, 0), mi.duration) AS duration,
+                COUNT(ms.id) AS streams
+            FROM media_parts AS mp
+            LEFT JOIN media_items AS mi ON mi.id = mp.media_item_id
+            LEFT JOIN media_streams AS ms ON ms.media_part_id = mp.id
+            WHERE mp.id IN ({placeholders})
+            GROUP BY mp.id
+            """,
+            part_ids,
+        ).fetchall()
+        return [
+            {
+                "part_id": int(row[0]),
+                "duration": row[1],
+                "streams": int(row[2] or 0),
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
+
+
 class Handler(BaseHTTPRequestHandler):
-    """HTTP 请求处理器：提供健康检查、DB 探测、繁忙检测、写入接口。"""
+    """HTTP 请求处理器：提供状态查询、健康检查、DB 探测和写入接口。"""
 
     server_version = "PlexMediaInfoHelper/1.0"
 
@@ -487,7 +524,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"success": False, "error": "未知路径"})
 
     def do_POST(self) -> None:
-        """处理 POST：/write（单条）、/write_batch（批量）。"""
+        """处理 POST：/parts/status、/write（单条）、/write_batch（批量）。"""
         if not self._check_token():
             self._send(401, {"success": False, "error": "token 校验失败"})
             return
@@ -504,6 +541,40 @@ class Handler(BaseHTTPRequestHandler):
             self._send(
                 500,
                 {"success": False, "error": "未找到 Plex 数据库，请设置 PTH_DB_PATH"},
+            )
+            return
+
+        if self.path == "/parts/status":
+            raw_ids = payload.get("part_ids") or []
+            if not isinstance(raw_ids, list) or len(raw_ids) > 1000:
+                self._send(
+                    400,
+                    {"success": False, "error": "part_ids 必须是最多 1000 项的数组"},
+                )
+                return
+            part_ids: List[int] = []
+            for value in raw_ids:
+                try:
+                    item = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if item > 0 and item not in part_ids:
+                    part_ids.append(item)
+            try:
+                parts = read_part_status(db, part_ids)
+            except sqlite3.Error as exc:
+                self._send(
+                    500,
+                    {"success": False, "error": f"读取 Plex Part 状态失败: {exc}"},
+                )
+                return
+            self._send(
+                200,
+                {
+                    "success": True,
+                    "total": len(part_ids),
+                    "parts": parts,
+                },
             )
             return
 

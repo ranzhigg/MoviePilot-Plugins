@@ -7,6 +7,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 
 PLUGIN_DIR = Path(__file__).resolve().parents[1]
@@ -90,6 +91,20 @@ class MediaProxyTokenTest(unittest.TestCase):
             self.module.verify_media_token(
                 tampered, pickcode="a1b2c3d4e5f6g7h8i"
             )
+        )
+
+    def test_redirect_url_can_be_upgraded_to_media_gateway(self) -> None:
+        source = (
+            "https://mp.example/api/v1/plugin/P115StrmHelper/redirect_url"
+            "?pickcode=a1b2c3d4e5f6g7h8i"
+        )
+        gateway = self.module.build_media_proxy_url(source)
+        parts = urlsplit(gateway)
+        self.assertIn("/P115StrmHelper/media_proxy", parts.path)
+        self.assertNotIn("//media_proxy", parts.path)
+        token = parse_qs(parts.query)["media_token"][0]
+        self.assertIsNotNone(
+            self.module.verify_media_token(token, pickcode="a1b2c3d4e5f6g7h8i")
         )
 
 

@@ -23,6 +23,7 @@ from ffprobe_source import (  # noqa: E402
     parse_path_map,
     read_strm_url,
 )
+import ffprobe_source as ffprobe_module  # noqa: E402
 
 
 class FfprobeSourceTest(unittest.TestCase):
@@ -73,6 +74,33 @@ class FfprobeSourceTest(unittest.TestCase):
         self.assertEqual(result["streams"][0]["bit_depth"], 10)
         self.assertEqual(result["streams"][0]["frame_rate"], 23.976)
         self.assertEqual(result["streams"][2]["codec"], "srt")
+
+    def test_media_gateway_is_probed_before_direct_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "movie.strm"
+            source = (
+                "https://mp.example/api/v1/plugin/P115StrmHelper/redirect_url"
+                "?pickcode=a1b2c3d4e5f6g7h8i"
+            )
+            path.write_text(source + "\n", encoding="utf-8")
+            calls = []
+
+            def fake_gateway(url: str) -> str:
+                return url.replace("/redirect_url", "/media_proxy") + "&media_token=test"
+
+            def fake_probe(url: str, timeout: float = 40.0):
+                calls.append(url)
+                return {"source": "ffprobe", "streams": [{"stream_type": 1}]}
+
+            with patch.object(
+                ffprobe_module, "build_media_proxy_url", side_effect=fake_gateway
+            ), patch.object(ffprobe_module, "ffprobe_url", side_effect=fake_probe):
+                result = FfprobeSource(cache_ttl=0).find_streams_by_name(str(path))
+
+            self.assertIsNotNone(result)
+            assert result is not None
+            self.assertEqual(result["probe_route"], "media_proxy")
+            self.assertIn("/media_proxy", calls[0])
 
 
 class MediaInfoCompleterTest(unittest.TestCase):
@@ -232,6 +260,16 @@ class MediaInfoCompleterTest(unittest.TestCase):
                 return parts[:2] if only_missing else parts
 
         class HelperStub:
+            def part_status(self, part_ids, batch_size=500):
+                del batch_size
+                return {
+                    str(part_id): {
+                        "duration": 0 if part_id < 3 else 120,
+                        "streams": 0 if part_id < 3 else 2,
+                    }
+                    for part_id in part_ids
+                }
+
             def write_batch(self, items, force=False):
                 del force
                 return {
@@ -259,6 +297,7 @@ class MediaInfoCompleterTest(unittest.TestCase):
         self.assertEqual(summary["total_strm_parts"], 3)
         self.assertEqual(summary["missing_before"], 2)
         self.assertEqual(summary["completed_before"], 1)
+        self.assertEqual(summary["status_source"], "helper_db")
         self.assertEqual(summary["written_ok"], 2)
         self.assertEqual(summary["pending_after"], 0)
         self.assertEqual(summary["completed_after"], 3)

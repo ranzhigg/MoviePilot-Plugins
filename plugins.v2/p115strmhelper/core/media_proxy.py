@@ -11,8 +11,10 @@ import binascii
 import hashlib
 import hmac
 import json
+import re
 import secrets
 from typing import Any, Dict, Mapping, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .config import configer
 
@@ -20,6 +22,7 @@ from .config import configer
 _SECRET_KEY = "p115strmhelper_media_proxy_signing_key"
 _TOKEN_VERSION = 1
 _SECRET_CACHE: Optional[str] = None
+_MEDIA_PROXY_ROUTE = re.compile(r"/(redirect_url|media_proxy)(?=/|$)")
 
 
 def _b64encode(value: bytes) -> str:
@@ -126,3 +129,48 @@ def verify_media_token(
         json.JSONDecodeError,
     ):
         return None
+
+
+def build_media_proxy_url(source_url: str) -> str:
+    """把插件生成的 redirect_url/旧 media_proxy 地址升级为媒体网关地址。
+
+    这个转换只处理 P115StrmHelper 自己的 URL，并根据 URL 中的资源参数重新签发
+    能力令牌。普通 115 CDN 地址、缺少资源参数的自定义 URL 会原样返回空串，
+    由调用方决定是否回退到原始地址。
+    """
+    value = str(source_url or "").strip()
+    if not value.startswith(("http://", "https://")):
+        return ""
+    try:
+        parts = urlsplit(value)
+        route = _MEDIA_PROXY_ROUTE.search(parts.path)
+        if route is None or "/P115StrmHelper/" not in parts.path:
+            return ""
+
+        query = parse_qsl(parts.query, keep_blank_values=True)
+        values = dict(query)
+        pickcode = str(values.get("pickcode") or "").strip()
+        share_code = str(values.get("share_code") or "").strip()
+        receive_code = str(values.get("receive_code") or "").strip()
+        file_id = str(values.get("id") or values.get("file_id") or "").strip()
+        token = issue_media_token(
+            pickcode=pickcode,
+            share_code=share_code,
+            receive_code=receive_code,
+            file_id=file_id,
+        )
+        if not token:
+            return ""
+
+        path = (
+            parts.path[: route.start(0)]
+            + "/media_proxy"
+            + parts.path[route.end(0) :]
+        )
+        query = [(key, item) for key, item in query if key != "media_token"]
+        query.append(("media_token", token))
+        return urlunsplit(
+            (parts.scheme, parts.netloc, path, urlencode(query), parts.fragment)
+        )
+    except (TypeError, ValueError):
+        return ""

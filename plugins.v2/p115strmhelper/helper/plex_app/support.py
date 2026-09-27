@@ -145,27 +145,33 @@ class PlexAppSupport:
     def _log_summary(cls, scope: str, summary: Dict[str, Any]) -> None:
         if summary.get("total_strm_parts") is not None:
             logger.info(
-                "Plex App 媒体信息补全[%s]：全库 %s，扫描前完整 %s，候选 %s，解析 %s，写入 %s，扫描后完整 %s，仍待补 %s，未命中 %s，失败 %s",
+                "Plex App 媒体信息补全[%s]：全库 %s，扫描前完整 %s，候选 %s，解析 %s（网关 %s/直连回退 %s），写入 %s，扫描后完整 %s，仍待补 %s，未命中 %s，失败 %s，状态源 %s",
                 scope,
                 summary.get("total_strm_parts", 0),
                 summary.get("completed_before", 0),
                 summary.get("strm_parts", 0),
                 summary.get("resolved", 0),
+                summary.get("gateway_hits", 0),
+                summary.get("direct_fallback_hits", 0),
                 summary.get("written_ok", 0),
                 summary.get("completed_after", 0),
                 summary.get("pending_after", 0),
                 summary.get("unresolved", 0),
                 summary.get("write_failed", 0),
+                summary.get("status_source") or "unknown",
             )
             return
         logger.info(
-            "Plex App 媒体信息补全[%s]：处理 %s，解析 %s，写入 %s，未命中 %s，失败 %s",
+            "Plex App 媒体信息补全[%s]：处理 %s，解析 %s（网关 %s/直连回退 %s），写入 %s，未命中 %s，失败 %s，状态源 %s",
             scope,
             summary.get("strm_parts", 0),
             summary.get("resolved", 0),
+            summary.get("gateway_hits", 0),
+            summary.get("direct_fallback_hits", 0),
             summary.get("written_ok", 0),
             summary.get("unresolved", 0),
             summary.get("write_failed", 0),
+            summary.get("status_source") or "unknown",
         )
 
     def start_completion(
@@ -289,6 +295,13 @@ class PlexAppSupport:
                         "batches",
                         "written_ok",
                         "write_failed",
+                        "resolved",
+                        "unresolved",
+                        "gateway_hits",
+                        "direct_fallback_hits",
+                        "status_source",
+                        "pending_after",
+                        "completed_after",
                     )
                     if key in event
                 }
@@ -789,9 +802,15 @@ class PlexAppSupport:
             "total_strm_parts": last_result.get("total_strm_parts"),
             "completed_before": last_result.get("completed_before"),
             "missing_before": last_result.get("missing_before"),
+            "strm_parts": last_result.get("strm_parts", 0),
+            "resolved": last_result.get("resolved", 0),
             "written_ok": last_result.get("written_ok", 0),
             "unresolved": last_result.get("unresolved", 0),
             "write_failed": last_result.get("write_failed", 0),
+            "gateway_hits": last_result.get("gateway_hits", 0),
+            "direct_fallback_hits": last_result.get("direct_fallback_hits", 0),
+            "ffprobe_hits": last_result.get("ffprobe_hits", 0),
+            "status_source": last_result.get("status_source"),
             "pending_after": last_result.get("pending_after"),
             "completed_after": last_result.get("completed_after"),
             "last_scan_ts": last_result.get("ts"),

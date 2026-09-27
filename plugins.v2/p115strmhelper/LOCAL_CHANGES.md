@@ -1,6 +1,6 @@
 # 本地修改快照
 
-基于 DDSRem-Dev/MoviePilot-Plugins 的 P115StrmHelper 2.8.81，保留上游作者与许可证。本 fork 发布版本为 2.8.97，沿用现有 plugins.v2 目录，不迁移到 plugins.v3。
+基于 DDSRem-Dev/MoviePilot-Plugins 的 P115StrmHelper 2.8.81，保留上游作者与许可证。本 fork 发布版本为 2.8.98，沿用现有 plugins.v2 目录，不迁移到 plugins.v3。
 
 ## 包含的修改
 
@@ -28,6 +28,8 @@
 - 入库自动补全默认使用 Helper 强制写入，绕过 Plex 扫描期间的短暂 busy 状态；仍受已选媒体库、`only_missing` 和现有批次/重试配置约束
 - Plex 数据看板新增全库统计口径：区分全库 STRM 总数、扫描前已完整、实际成功写入、未解析、写入失败和扫描后仍待补数量；全库扫描只补缺失项，不重复覆盖完整媒体
 - 看板全库补全与设置页“立即补全”对缺失项默认使用 Helper 强制写入；仍只处理缺失媒体流，避免 Plex 扫描期间 busy 导致已解析数据整批不落库
+- Plex 全库补全改为先枚举全部 STRM，再通过同机 Helper 读取 `media_parts/media_streams` 判定缺失；不再依赖剧集 children 响应中的可选 Stream 字段，避免数万集被错误跳过
+- ffprobe 探测、旧 STRM 兼容和新 STRM 生成统一优先走 115 媒体网关；只有网关失败才尝试直连，并在看板记录网关命中、直连回退和状态来源
 - 提供固定 fork 来源和版本校验的重建恢复脚本，避免同版本上游包覆盖本地定制
 
 ## 脱敏范围
@@ -36,4 +38,4 @@
 
 ## 使用边界
 
-自愈脚本需由部署者自行提供并配置；不设置环境变量时不执行。版本号、仓库索引和发布安装包统一为 2.8.97。播放即时探测默认开启，但仍需开启 Plex App、配置 Plex MediaInfo Helper、选择媒体库并接收 Plex Webhook；入库自动补全默认开启并由每 15 分钟增量扫描兜底；片头片尾按需功能默认关闭，需在 Plex Pass 服务端启用 Plex Webhook 与标记探测选项。环境变量也可以保存在 MoviePilot 的 /config/app.env 中，真实脚本路径仅在部署端设置。
+自愈脚本需由部署者自行提供并配置；不设置环境变量时不执行。版本号、仓库索引和发布安装包统一为 2.8.98。STRM 媒体网关默认开启，播放与探测均优先使用网关；仍需开启 Plex App、配置 Plex MediaInfo Helper、选择媒体库并接收 Plex Webhook；入库自动补全默认开启并由每 15 分钟增量扫描兜底；片头片尾按需功能默认关闭，需在 Plex Pass 服务端启用 Plex Webhook 与标记探测选项。环境变量也可以保存在 MoviePilot 的 /config/app.env 中，真实脚本路径仅在部署端设置。

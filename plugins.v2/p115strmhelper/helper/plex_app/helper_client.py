@@ -91,6 +91,70 @@ class HelperClient:
             logger.warning("helper /write_batch 失败: %s（本批 %s 条未写入）", e, len(items))
         return None
 
+    def part_status(
+        self, part_ids: List[Any], batch_size: int = 500
+    ) -> Optional[Dict[str, Dict[str, Any]]]:
+        """读取 Plex 数据库中一批 Part 的真实时长与流数量。
+
+        Plex 的 children 接口不会稳定返回 Stream 数组，补全器不能只依赖该
+        接口判断“是否已写入”。该接口由同机 helper 查询 SQLite，返回空流的
+        Part 也会明确返回 streams=0；返回 None 表示旧版 helper 尚未支持。
+        """
+        normalized: List[int] = []
+        for value in part_ids or []:
+            try:
+                item = int(value)
+            except (TypeError, ValueError):
+                continue
+            if item > 0 and item not in normalized:
+                normalized.append(item)
+        if not normalized:
+            return {}
+        try:
+            size = max(1, min(1000, int(batch_size or 500)))
+        except (TypeError, ValueError):
+            size = 500
+
+        result: Dict[str, Dict[str, Any]] = {}
+        try:
+            with Client(timeout=max(15.0, self._timeout)) as client:
+                for start in range(0, len(normalized), size):
+                    current = normalized[start : start + size]
+                    resp = client.post(
+                        f"{self._base}/parts/status",
+                        headers=self._headers(),
+                        json={"part_ids": current},
+                    )
+                    if resp.status_code == 404:
+                        logger.info(
+                            "helper 尚未支持 /parts/status，将回退 Plex API 状态判断"
+                        )
+                        return None
+                    if resp.status_code != 200:
+                        logger.warning(
+                            "helper /parts/status 返回 %s，本批 %s 条状态未读取",
+                            resp.status_code,
+                            len(current),
+                        )
+                        return None
+                    data = resp.json()
+                    if not data.get("success"):
+                        logger.warning("helper /parts/status 返回失败: %s", data)
+                        return None
+                    for item in data.get("parts") or []:
+                        try:
+                            part_id = str(int(item.get("part_id")))
+                        except (TypeError, ValueError):
+                            continue
+                        result[part_id] = {
+                            "duration": item.get("duration"),
+                            "streams": item.get("streams", 0),
+                        }
+        except Exception as e:
+            logger.warning("helper /parts/status 失败: %s", e)
+            return None
+        return result
+
     @staticmethod
     def _log_batch_result(data: Dict[str, Any], sent: int) -> None:
         """

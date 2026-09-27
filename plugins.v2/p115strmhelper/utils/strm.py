@@ -395,7 +395,7 @@ class StrmUrlGetter:
         """
         self.strm_url_encode = configer.strm_url_encode
         self.media_proxy_enabled = bool(
-            getattr(configer, "strm_media_proxy_enabled", False)
+            getattr(configer, "strm_media_proxy_enabled", True)
         )
         endpoint = "media_proxy" if self.media_proxy_enabled else "redirect_url"
         self.base_url_cache = (

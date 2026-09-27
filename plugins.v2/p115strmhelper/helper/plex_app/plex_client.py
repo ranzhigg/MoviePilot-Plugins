@@ -509,8 +509,10 @@ class PlexClient:
                     if streams:
                         continue
                 else:
-                    # 列表数据：流数未知(None)时沿用时长判断，避免全库重扫
-                    if streams is None or streams > 0:
+                    # children 列表数据没有 Stream 字段时只能判定为未知，
+                    # 不能用 duration 冒充“已有流”；全库扫描会再用 helper
+                    # 直接查询 Plex 数据库做精确过滤。
+                    if streams is not None and streams > 0:
                         continue
             out.append(p)
         return out

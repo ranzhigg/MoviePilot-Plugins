@@ -69,6 +69,48 @@ class MediaInfoCompleter:
         except (TypeError, ValueError):
             return default
 
+    @staticmethod
+    def _part_is_missing(part: Dict[str, Any]) -> bool:
+        """按真实流数量判断 Part 是否仍需补全。"""
+        if not part.get("existing_duration"):
+            return True
+        streams = part.get("existing_streams")
+        if streams is None:
+            # children 接口不返回 Stream，此时必须保守地认为未知。
+            return True
+        return MediaInfoCompleter._safe_int(streams) <= 0
+
+    def _select_missing_parts(
+        self, parts: List[Dict[str, Any]], summary: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """用 helper 的同机数据库状态过滤缺失 Part，旧 helper 自动回退。"""
+        if not parts:
+            summary["status_source"] = "helper_db"
+            return []
+        status_reader = getattr(self._helper, "part_status", None)
+        supported = False
+        if callable(status_reader):
+            part_ids = [part.get("part_id") for part in parts if part.get("part_id")]
+            try:
+                statuses = status_reader(part_ids)
+            except Exception as exc:
+                logger.warning("读取 helper Part 状态失败，回退 Plex API: %s", exc)
+                statuses = None
+            if statuses is not None:
+                supported = True
+                for part in parts:
+                    key = str(part.get("part_id"))
+                    status = statuses.get(key)
+                    if status is None:
+                        continue
+                    if status.get("duration") is not None:
+                        part["existing_duration"] = status.get("duration")
+                    part["existing_streams"] = self._safe_int(
+                        status.get("streams"), 0
+                    )
+        summary["status_source"] = "helper_db" if supported else "plex_api_fallback"
+        return [part for part in parts if self._part_is_missing(part)]
+
     def _write_payloads(
         self,
         payloads: List[Dict[str, Any]],
@@ -280,11 +322,14 @@ class MediaInfoCompleter:
             "resolved": 0,
             "emby_hits": 0,
             "ffprobe_hits": 0,
+            "gateway_hits": 0,
+            "direct_fallback_hits": 0,
             "unresolved": 0,
             "written_ok": 0,
             "write_failed": 0,
             "helper_busy": False,
             "write_retries": 0,
+            "status_source": None,
             "items": [],
         }
         parts = self._plex.collect_window_parts_by_rating_key(
@@ -317,6 +362,10 @@ class MediaInfoCompleter:
                     summary["emby_hits"] += 1
                 elif info.get("source") == "ffprobe":
                     summary["ffprobe_hits"] += 1
+                    if info.get("probe_route") == "media_proxy":
+                        summary["gateway_hits"] += 1
+                    elif info.get("probe_route") == "direct":
+                        summary["direct_fallback_hits"] += 1
             else:
                 summary["unresolved"] += 1
                 unresolved_files.append(p.get("file") or str(p.get("part_id")))
@@ -326,6 +375,7 @@ class MediaInfoCompleter:
 
         for p in payloads:
             p.pop("source", None)
+            p.pop("probe_route", None)
         if payloads:
             self._write_payloads(payloads, summary, scope, item_index=item_index)
         return summary
@@ -360,16 +410,20 @@ class MediaInfoCompleter:
             "resolved": 0,
             "emby_hits": 0,
             "ffprobe_hits": 0,
+            "gateway_hits": 0,
+            "direct_fallback_hits": 0,
             "unresolved": 0,
             "written_ok": 0,
             "write_failed": 0,
             "helper_busy": False,
             "write_retries": 0,
+            "status_source": None,
             "details": [],
         }
 
-        # 1. 枚举 STRM part。全库看板需要知道总量与扫描开始时的完整量，
-        # 但实际处理仍只取缺失项，避免全库刷新时无意义地重写全部 part。
+        # 1. 枚举全部 STRM Part。剧集 children 接口没有稳定的 Stream 字段，
+        # 因此 only_missing 不能在 Plex API 层提前过滤，必须交给同机 helper
+        # 根据 media_streams 的真实行数判断。
         all_parts: List[Dict[str, Any]] = []
         if full_scan:
             total_parts: List[Dict[str, Any]] = []
@@ -378,8 +432,7 @@ class MediaInfoCompleter:
             summary["total_strm_parts"] = len(total_parts)
 
             if only_missing:
-                for skey in section_keys:
-                    all_parts.extend(self._plex.collect_strm_parts(skey, True))
+                all_parts = self._select_missing_parts(total_parts, summary)
                 summary["missing_before"] = len(all_parts)
                 summary["completed_before"] = max(
                     0, len(total_parts) - len(all_parts)
@@ -390,7 +443,9 @@ class MediaInfoCompleter:
                 all_parts = total_parts
         else:
             for skey in section_keys:
-                all_parts.extend(self._plex.collect_strm_parts(skey, only_missing))
+                all_parts.extend(self._plex.collect_strm_parts(skey, False))
+            if only_missing:
+                all_parts = self._select_missing_parts(all_parts, summary)
             if not only_missing:
                 summary["total_strm_parts"] = len(all_parts)
 
@@ -433,6 +488,10 @@ class MediaInfoCompleter:
                         summary["emby_hits"] += 1
                     elif info.get("source") == "ffprobe":
                         summary["ffprobe_hits"] += 1
+                        if info.get("probe_route") == "media_proxy":
+                            summary["gateway_hits"] += 1
+                        elif info.get("probe_route") == "direct":
+                            summary["direct_fallback_hits"] += 1
                 else:
                     summary["unresolved"] += 1
                     unresolved_files.append(
@@ -448,6 +507,7 @@ class MediaInfoCompleter:
         # 3. 写入 helper（去掉 source 字段再发）
         for p in payloads:
             p.pop("source", None)
+            p.pop("probe_route", None)
         if payloads:
             self._write_payloads(
                 payloads,

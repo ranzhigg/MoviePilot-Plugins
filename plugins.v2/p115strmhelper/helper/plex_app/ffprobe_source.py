@@ -13,11 +13,17 @@ import subprocess
 from threading import Lock
 from time import monotonic
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 try:
     from app.sdk.logging import logger
 except Exception:  # pragma: no cover - standalone helper/unit-test fallback
     logger = logging.getLogger(__name__)
+
+try:
+    from ...core.media_proxy import build_media_proxy_url
+except Exception:  # pragma: no cover - standalone helper/unit-test fallback
+    build_media_proxy_url = None
 
 
 PathMapping = Tuple[str, str]
@@ -341,6 +347,25 @@ def ffprobe_url(
     return _normalize_ffprobe(result)
 
 
+def _direct_probe_url(url: str) -> str:
+    """为已写入 media_proxy 的旧 STRM 构造无网关的直连回退地址。"""
+    try:
+        parts = urlsplit(url)
+        if "/media_proxy" not in parts.path:
+            return url
+        path = parts.path.replace("/media_proxy", "/redirect_url", 1)
+        query = [
+            (key, value)
+            for key, value in parse_qsl(parts.query, keep_blank_values=True)
+            if key != "media_token"
+        ]
+        return urlunsplit(
+            (parts.scheme, parts.netloc, path, urlencode(query), parts.fragment)
+        )
+    except (TypeError, ValueError):
+        return url
+
+
 class FfprobeSource:
     """将 Plex 返回的文件路径转换为 MP 路径并提供 ffprobe 媒体信息。"""
 
@@ -400,8 +425,24 @@ class FfprobeSource:
                     if expires_at > monotonic():
                         return deepcopy(cached_info)
                     self._cache.pop(url, None)
-        info = ffprobe_url(url, timeout=self._timeout)
-        if info:
+        candidates: List[Tuple[str, str]] = []
+        if callable(build_media_proxy_url):
+            gateway_url = build_media_proxy_url(url)
+            if gateway_url:
+                candidates.append(("media_proxy", gateway_url))
+        direct_url = _direct_probe_url(url)
+        candidates.append(("direct", direct_url))
+
+        seen: set[str] = set()
+        for route, probe_url in candidates:
+            if not probe_url or probe_url in seen:
+                continue
+            seen.add(probe_url)
+            info = ffprobe_url(probe_url, timeout=self._timeout)
+            if not info:
+                continue
+            # 仅供补全编排和看板统计使用，写入 Plex 前会移除该内部字段。
+            info["probe_route"] = route
             if self._cache_ttl > 0:
                 with self._cache_lock:
                     if len(self._cache) >= 2048:

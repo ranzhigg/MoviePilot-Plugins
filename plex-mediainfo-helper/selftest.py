@@ -52,6 +52,11 @@ def main() -> None:
     assert os.path.isfile(bak), "备份失败"
     print("备份 OK:", bak)
 
+    # 补全扫描依赖这个只读接口判定实际 media_streams 行数；写入前应被判为缺失。
+    before = h.read_part_status(db, [200, 999999])
+    assert before == [{"part_id": 200, "duration": None, "streams": 0}], before
+    print("Part 状态（写入前） OK:", before)
+
     payload = {
         "part_id": 200,
         "container": "mkv",
@@ -89,6 +94,9 @@ def main() -> None:
         "SELECT COUNT(*) FROM media_streams WHERE media_part_id=200"
     ).fetchone()[0]
     assert ns == 3, ns
+    after = h.read_part_status(db, [200])
+    assert after == [{"part_id": 200, "duration": 1420000, "streams": 3}], after
+    print("Part 状态（写入后） OK:", after)
 
     # 二次写入（overwrite）应先删旧流再写，仍是 3 条
     res2 = h.write_media_info(db, payload)
