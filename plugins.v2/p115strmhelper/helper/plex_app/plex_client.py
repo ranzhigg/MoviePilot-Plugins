@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from time import sleep
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
@@ -13,6 +14,10 @@ from app.sdk.logging import logger
 
 class PlexClient:
     """封装 Plex 查询、媒体信息写入及原生片头片尾分析请求。"""
+
+    _GET_RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
+    _GET_MAX_ATTEMPTS = 3
+    _GET_RETRY_DELAYS = (0.35, 0.9)
 
     def __init__(self, base_url: str, token: str, timeout: float = 30.0) -> None:
         """
@@ -35,14 +40,25 @@ class PlexClient:
         """
         sep = "&" if "?" in path else "?"
         url = f"{self._base}{path}{sep}X-Plex-Token={quote(self._token, safe='')}"
-        try:
-            with Client(timeout=self._timeout) as client:
-                resp = client.get(url, headers={"Accept": "application/json"})
-                if resp.status_code == 200:
-                    return resp.json()
-                logger.warning("Plex API %s 返回 %s", path, resp.status_code)
-        except Exception as e:
-            logger.warning("Plex API 请求失败 %s: %s", path, e)
+        for attempt in range(self._GET_MAX_ATTEMPTS):
+            try:
+                with Client(timeout=self._timeout) as client:
+                    resp = client.get(url, headers={"Accept": "application/json"})
+                    if resp.status_code == 200:
+                        return resp.json()
+                    if (
+                        resp.status_code in self._GET_RETRYABLE_STATUS
+                        and attempt < self._GET_MAX_ATTEMPTS - 1
+                    ):
+                        sleep(self._GET_RETRY_DELAYS[attempt])
+                        continue
+                    logger.warning("Plex API %s 返回 %s", path, resp.status_code)
+                    return None
+            except Exception as e:
+                if attempt < self._GET_MAX_ATTEMPTS - 1:
+                    sleep(self._GET_RETRY_DELAYS[attempt])
+                    continue
+                logger.warning("Plex API 请求失败 %s: %s", path, e)
         return None
 
     def _put(self, path: str, params: Optional[Dict[str, Any]] = None) -> bool:
