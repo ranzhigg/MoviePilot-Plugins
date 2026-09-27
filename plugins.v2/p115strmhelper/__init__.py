@@ -1155,14 +1155,180 @@ class P115StrmHelper(_PluginBase):
                 None,
             )
         if k == "plex_app":
+            snapshot = self.plex_app_support.result()
+            dashboard = snapshot.get("dashboard") or {}
+            completion = snapshot.get("completion") or {}
+            progress = dashboard.get("progress") or {}
+
+            def number(name: str, default: int = 0) -> int:
+                value = dashboard.get(name)
+                if value is None:
+                    value = progress.get(name)
+                try:
+                    return int(value or default)
+                except (TypeError, ValueError):
+                    return default
+
+            def text(value: Any, default: str = "0") -> str:
+                return default if value is None else str(value)
+
+            status = str(dashboard.get("status") or completion.get("status") or "idle")
+            status_labels = {
+                "idle": ("空闲", "info"),
+                "queued": ("排队中", "info"),
+                "running": ("运行中", "primary"),
+                "done": ("已完成", "success"),
+                "failed": ("失败", "error"),
+            }
+            status_label, status_color = status_labels.get(status, (status, "info"))
+            total = number("total_strm_parts") or number("progress_total")
+            done = number("progress_done")
+            if not total:
+                total = number("missing_before")
+            percent = min(100, max(0, int(done * 100 / total))) if total else 0
+            if status == "done" and total:
+                percent = 100
+
+            def metric_card(
+                label: str, value: Any, note: str = "", color: Optional[str] = None
+            ) -> Dict[str, Any]:
+                card_props: Dict[str, Any] = {"variant": "tonal"}
+                if color:
+                    card_props["color"] = color
+                content: List[Dict[str, Any]] = [
+                    {
+                        "component": "div",
+                        "props": {"class": "text-caption text-medium-emphasis"},
+                        "text": label,
+                    },
+                    {
+                        "component": "div",
+                        "props": {"class": "text-h5 font-weight-bold mt-1"},
+                        "text": text(value),
+                    },
+                ]
+                if note:
+                    content.append(
+                        {
+                            "component": "div",
+                            "props": {"class": "text-caption mt-1"},
+                            "text": note,
+                        }
+                    )
+                return {
+                    "component": "VCol",
+                    "props": {"cols": 12, "sm": 6, "md": 3},
+                    "content": [
+                        {
+                            "component": "VCard",
+                            "props": card_props,
+                            "content": [{"component": "VCardText", "content": content}],
+                        }
+                    ],
+                }
+
+            progress_text = f"{done:,} / {total:,}（{percent}%）" if total else "等待扫描初始化"
+            selected_sections = dashboard.get("selected_sections") or []
+            if not selected_sections:
+                selected_sections = self.plex_app_support._selected_sections()
+            elements = [
+                {
+                    "component": "VRow",
+                    "content": [
+                        metric_card(
+                            "全库 STRM",
+                            number("total_strm_parts"),
+                            "全部媒体分片",
+                            "primary",
+                        ),
+                        metric_card(
+                            "已解析",
+                            number("resolved"),
+                            f"网关 {number('gateway_hits')} / 直连 {number('direct_fallback_hits')}",
+                            "success",
+                        ),
+                        metric_card(
+                            "已写入 Helper",
+                            number("written_ok"),
+                            f"失败 {number('write_failed')}",
+                            "success",
+                        ),
+                        metric_card(
+                            "仍待处理",
+                            number("unresolved"),
+                            f"扫描前缺失 {number('missing_before')}",
+                            "warning",
+                        ),
+                    ],
+                },
+                {
+                    "component": "VRow",
+                    "content": [
+                        {
+                            "component": "VCol",
+                            "props": {"cols": 12},
+                            "content": [
+                                {
+                                    "component": "VAlert",
+                                    "props": {
+                                        "type": status_color,
+                                        "variant": "tonal",
+                                        "class": "mb-2",
+                                    },
+                                    "text": (
+                                        f"状态：{status_label} · {progress_text} · "
+                                        f"媒体库 {len(selected_sections)} 个 · 自动刷新 10 秒"
+                                    ),
+                                },
+                                {
+                                    "component": "VProgressLinear",
+                                    "props": {
+                                        "model-value": percent,
+                                        "color": status_color,
+                                        "height": 8,
+                                        "rounded": True,
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "component": "VRow",
+                    "content": [
+                        metric_card(
+                            "扫描前已完整",
+                            number("completed_before"),
+                            "已有媒体流信息",
+                        ),
+                        metric_card(
+                            "扫描后已完整",
+                            number("completed_after"),
+                            "任务完成后更新",
+                        ),
+                        metric_card(
+                            "扫描候选",
+                            number("missing_before"),
+                            "本轮仅补缺失项",
+                        ),
+                        metric_card(
+                            "扫描失败",
+                            number("write_failed"),
+                            "写入或解析失败",
+                            "error" if number("write_failed") else None,
+                        ),
+                    ],
+                },
+            ]
             return (
                 {"cols": 12},
                 {
                     "title": "Plex 媒体信息补全",
                     "subtitle": self.plugin_name,
                     "border": True,
+                    "refresh": 10,
                 },
-                None,
+                elements,
             )
         if k == "manual_transfer":
             return (

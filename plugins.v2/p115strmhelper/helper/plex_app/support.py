@@ -829,6 +829,10 @@ class PlexAppSupport:
             dashboard["progress_phase"] = progress.get("phase")
             dashboard["progress_done"] = progress.get("done")
             dashboard["progress_total"] = progress.get("total")
+            # 任务运行期间，last_result 仍然是上一轮完整汇总。把本轮
+            # 已产生的计数同步到 dashboard 顶层，避免前端只读顶层字段
+            # 时一直显示旧的 0/候选；原始进度仍保留在 progress 下。
+            live_status = str(completion.get("status") or "idle")
             for key in (
                 "resolved",
                 "unresolved",
@@ -841,6 +845,13 @@ class PlexAppSupport:
             ):
                 if key in progress:
                     dashboard[f"progress_{key}"] = progress[key]
+                    if live_status in ("queued", "running"):
+                        dashboard[key] = progress[key]
+            if live_status in ("queued", "running"):
+                dashboard["full_scan"] = bool(completion.get("full_scan"))
+                dashboard["last_scan_ts"] = completion.get("started_at") or dashboard.get(
+                    "last_scan_ts"
+                )
         return {
             "success": True,
             "completion": completion,
