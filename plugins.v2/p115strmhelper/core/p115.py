@@ -340,10 +340,19 @@ def get_pickcode_by_path(
         return None
     db_item = db_helper.get_by_path(path)
     if db_item:
-        try:
-            return db_item["pickcode"]
-        except ValueError:
-            return client.to_pickcode(db_item["id"])
+        # 元数据同步可能先写入文件记录、稍后才补 pickcode。空值不能直接
+        # 返回，否则会阻断后续的 fileid/API 回查，导致媒体事件无法生成 STRM。
+        cached_pickcode = db_item.get("pickcode")
+        if cached_pickcode:
+            return cached_pickcode
+        cached_file_id = db_item.get("id")
+        if cached_file_id:
+            try:
+                resolved_pickcode = client.to_pickcode(cached_file_id)
+                if resolved_pickcode:
+                    return resolved_pickcode
+            except Exception:
+                pass
     try:
         file_id = get_id(client=client, path=path, **request_kwargs)
         if file_id:
