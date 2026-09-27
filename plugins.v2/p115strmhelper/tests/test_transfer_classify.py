@@ -259,10 +259,6 @@ def _setup_mock_env() -> None:
     _make_pkg("app.plugins.p115strmhelper.helper.transfer")
     _make_module("app.plugins.p115strmhelper.core.config", configer=SimpleNamespace())
     _make_module(
-        "app.plugins.p115strmhelper.core.p115",
-        get_pickcode_by_path=MagicMock(),
-    )
-    _make_module(
         "app.plugins.p115strmhelper.schemas.transfer",
         TransferTask=object,
         RelatedFile=FakeRelatedFile,
@@ -651,69 +647,6 @@ class TestDoGenerate(TestCase):
             self._do_generate("剑风传奇 - S01E01 - 第 1 集.mkv")
         gen.assert_called_once()
         self.downloader.save_mediainfo_file.assert_not_called()
-
-    def test_transfer_complete_media_recovers_pickcode_from_target_path(self) -> None:
-        """
-        目标事件缺少 pickcode 时通过目标路径回查后仍能生成 STRM
-        """
-        module = self.transfer_module
-        item = self._build_item("剑风传奇 - S01E01 - 第 1 集.mkv")
-        item["transferinfo"].target_item.pickcode = None
-        client = MagicMock()
-        with (
-            patch.object(
-                module,
-                "get_pickcode_by_path",
-                return_value="b" * 17,
-            ) as resolve,
-            patch.object(
-                module.TransferStrmHelper,
-                "generate_strm_files",
-                return_value=(True, "/local/媒体库/电视剧/x/xx.strm"),
-            ) as gen,
-            patch.object(module, "StrmUrlGetter") as url_getter,
-        ):
-            url_getter.return_value.get_strm_url.return_value = "http://strm/url"
-            module.TransferStrmHelper().do_generate(
-                client=client,
-                item=item,
-                event_type="TransferComplete",
-                mediainfodownloader=self.downloader,
-            )
-        resolve.assert_called_once_with(
-            client,
-            "/pan/媒体库/电视剧/x/剑风传奇 - S01E01 - 第 1 集.mkv",
-        )
-        gen.assert_called_once()
-
-    def test_transfer_complete_media_recovers_pickcode_from_fileid(self) -> None:
-        """
-        目标路径暂不可见时通过事件 fileid 兜底后仍能生成 STRM
-        """
-        module = self.transfer_module
-        item = self._build_item("剑风传奇 - S01E02 - 第 2 集.mkv")
-        item["transferinfo"].target_item.pickcode = None
-        item["transferinfo"].target_item.fileid = "123"
-        client = MagicMock()
-        client.to_pickcode.return_value = "c" * 17
-        with (
-            patch.object(module, "get_pickcode_by_path", return_value=None),
-            patch.object(
-                module.TransferStrmHelper,
-                "generate_strm_files",
-                return_value=(True, "/local/媒体库/电视剧/x/xx.strm"),
-            ) as gen,
-            patch.object(module, "StrmUrlGetter") as url_getter,
-        ):
-            url_getter.return_value.get_strm_url.return_value = "http://strm/url"
-            module.TransferStrmHelper().do_generate(
-                client=client,
-                item=item,
-                event_type="TransferComplete",
-                mediainfodownloader=self.downloader,
-            )
-        client.to_pickcode.assert_called_once_with(123)
-        gen.assert_called_once()
 
     def test_subtitle_event_still_downloads(self) -> None:
         """

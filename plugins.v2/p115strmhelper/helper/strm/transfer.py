@@ -16,7 +16,6 @@ from app.schemas import TransferInfo, FileItem
 from app.schemas.types import EventType, ChainEventType
 
 from ...core.config import configer
-from ...core.p115 import get_pickcode_by_path
 from ...core.scrape import media_scrape_metadata
 from ...db_manager.oper import FileDbHelper
 from ...helper.mediainfo_download import MediaInfoDownloader
@@ -142,105 +141,6 @@ class TransferStrmHelper:
             PathRemoveUtils.remove_parent_dir(
                 file_path=old_strm_path, mode="mixed", func_type="【监控整理STRM生成】"
             )
-
-    @staticmethod
-    def _is_valid_pickcode(value: object) -> bool:
-        """
-        判断值是否为 115 STRM 链路可用的 pickcode。
-
-        :param value: 待校验值
-        :return bool: 是否为 17 位字母数字字符串
-        """
-        return isinstance(value, str) and len(value) == 17 and value.isalnum()
-
-    def _resolve_item_pickcode(
-        self,
-        client: P115Client,
-        target_item: FileItem,
-        target_path: str,
-        target_name: str,
-    ) -> Optional[str]:
-        """
-        可靠解析整理目标文件的 pickcode。
-
-        整理事件中的 target_item 可能只携带源文件字段，或者在元数据尚未
-        可见时缺少 pickcode。优先按目标路径回查，避免把源文件 fileid 当成
-        目标文件；路径回查失败后再使用事件携带的 fileid 兜底。
-
-        :param client: 115 客户端
-        :param target_item: 整理目标文件项
-        :param target_path: 整理目标完整路径
-        :param target_name: 整理目标文件名
-        :return Optional[str]: 可用 pickcode，无法解析时返回 None
-        """
-        item_pickcode = getattr(target_item, "pickcode", None)
-        if item_pickcode:
-            item_pickcode = str(item_pickcode)
-            if self._is_valid_pickcode(item_pickcode):
-                return item_pickcode
-            logger.warning(
-                "【监控整理STRM生成】%s 携带了无效 pickcode，开始按目标路径回查",
-                target_name,
-            )
-
-        request_kwargs = {}
-        get_ios_ua_app = getattr(configer, "get_ios_ua_app", None)
-        if callable(get_ios_ua_app):
-            try:
-                request_kwargs = get_ios_ua_app(app=False) or {}
-            except Exception as e:
-                logger.debug(
-                    "【监控整理STRM生成】构造 115 回查请求参数失败，使用默认参数: %s",
-                    e,
-                )
-
-        try:
-            path_pickcode = get_pickcode_by_path(
-                client, target_path, **request_kwargs
-            )
-            if path_pickcode:
-                path_pickcode = str(path_pickcode)
-                if self._is_valid_pickcode(path_pickcode):
-                    logger.info(
-                        "【监控整理STRM生成】%s 通过目标路径回查恢复 pickcode",
-                        target_name,
-                    )
-                    return path_pickcode
-        except Exception as e:
-            logger.debug(
-                "【监控整理STRM生成】%s 目标路径回查 pickcode 失败: %s",
-                target_name,
-                e,
-            )
-
-        file_id = getattr(target_item, "fileid", None)
-        try:
-            file_id = int(file_id)
-        except (TypeError, ValueError):
-            file_id = 0
-        if file_id > 0:
-            try:
-                fileid_pickcode = client.to_pickcode(file_id)
-                if fileid_pickcode:
-                    fileid_pickcode = str(fileid_pickcode)
-                    if self._is_valid_pickcode(fileid_pickcode):
-                        logger.info(
-                            "【监控整理STRM生成】%s 通过 fileid 回查恢复 pickcode",
-                            target_name,
-                        )
-                        return fileid_pickcode
-            except Exception as e:
-                logger.debug(
-                    "【监控整理STRM生成】%s 通过 fileid 回查 pickcode 失败: %s",
-                    target_name,
-                    e,
-                )
-
-        logger.error(
-            "【监控整理STRM生成】%s 无法从目标路径或 fileid 获取有效 pickcode，跳过本次处理",
-            target_name,
-        )
-        return None
 
     @staticmethod
     def _get_overwrite_mode(storage_name: str, pan_dir_path: str) -> Optional[str]:
@@ -408,11 +308,21 @@ class TransferStrmHelper:
         item_dest_path: str = item_transfer.target_item.path
         # 网盘目的地文件名称
         item_dest_name: str = item_transfer.target_item.name
-        # 网盘目的地文件 pickcode。这里先保留事件值，具体处理分支在确认
-        # 文件确实需要播放/下载时再解析，避免为 nfo 等非媒体文件发起回查。
-        item_dest_pickcode: Optional[str] = getattr(
-            item_transfer.target_item, "pickcode", None
-        )
+        # 网盘目的地文件 pickcode
+        item_dest_pickcode: str = item_transfer.target_item.pickcode
+        if (
+            not item_dest_pickcode
+            and item_transfer.target_item.storage == "CloudDrive储存"
+        ):
+            try:
+                item_dest_pickcode = client.to_pickcode(
+                    int(item_transfer.target_item.fileid)
+                )
+            except Exception as e:
+                logger.error(
+                    f"【监控整理STRM生成】CloudDrive2 储存 {item_dest_name} 无法转换获取 PickCode 值: {e}"
+                )
+                return
         # 是否蓝光原盘
         item_bluray: bool = StorageChain().is_bluray_folder(item_transfer.target_item)
 
@@ -431,12 +341,6 @@ class TransferStrmHelper:
             event_type == EventType.AudioTransferComplete
             or event_type == EventType.SubtitleTransferComplete
         ):
-            item_dest_pickcode = self._resolve_item_pickcode(
-                client=client,
-                target_item=item_transfer.target_item,
-                target_path=item_dest_path,
-                target_name=item_dest_name,
-            )
             self._download_media_file(
                 mediainfodownloader=mediainfodownloader,
                 item_transfer=item_transfer,
@@ -471,12 +375,6 @@ class TransferStrmHelper:
                     logger.warning(
                         f"【监控整理STRM生成】{item_dest_name} 为字幕/音频文件，自动走下载流程"
                     )
-                    item_dest_pickcode = self._resolve_item_pickcode(
-                        client=client,
-                        target_item=item_transfer.target_item,
-                        target_path=item_dest_path,
-                        target_name=item_dest_name,
-                    )
                     self._download_media_file(
                         mediainfodownloader=mediainfodownloader,
                         item_transfer=item_transfer,
@@ -493,12 +391,6 @@ class TransferStrmHelper:
                 )
                 return
 
-        item_dest_pickcode = self._resolve_item_pickcode(
-            client=client,
-            target_item=item_transfer.target_item,
-            target_path=item_dest_path,
-            target_name=item_dest_name,
-        )
         if not item_dest_pickcode:
             logger.error(
                 f"【监控整理STRM生成】{item_dest_name} 不存在 pickcode 值，无法生成 STRM 文件"
