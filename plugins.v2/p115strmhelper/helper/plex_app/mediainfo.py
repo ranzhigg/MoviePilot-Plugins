@@ -366,10 +366,7 @@ class MediaInfoCompleter:
                     summary["emby_hits"] += 1
                 elif info.get("source") == "ffprobe":
                     summary["ffprobe_hits"] += 1
-                    if info.get("probe_route") == "media_proxy":
-                        summary["gateway_hits"] += 1
-                    elif info.get("probe_route") == "direct":
-                        summary["direct_fallback_hits"] += 1
+                    summary["direct_fallback_hits"] += 1
             else:
                 summary["unresolved"] += 1
                 unresolved_files.append(p.get("file") or str(p.get("part_id")))
@@ -521,10 +518,7 @@ class MediaInfoCompleter:
                         summary["emby_hits"] += 1
                     elif info.get("source") == "ffprobe":
                         summary["ffprobe_hits"] += 1
-                        if info.get("probe_route") == "media_proxy":
-                            summary["gateway_hits"] += 1
-                        elif info.get("probe_route") == "direct":
-                            summary["direct_fallback_hits"] += 1
+                        summary["direct_fallback_hits"] += 1
                 else:
                     summary["unresolved"] += 1
                     unresolved_files.append(

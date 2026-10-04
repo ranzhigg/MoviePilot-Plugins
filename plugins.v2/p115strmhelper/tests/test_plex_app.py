@@ -10,7 +10,6 @@ import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from urllib.parse import parse_qs, urlsplit
 
 
 PLEX_APP_DIR = Path(__file__).resolve().parents[1] / "helper" / "plex_app"
@@ -76,7 +75,7 @@ class FfprobeSourceTest(unittest.TestCase):
         self.assertEqual(result["streams"][0]["frame_rate"], 23.976)
         self.assertEqual(result["streams"][2]["codec"], "srt")
 
-    def test_media_gateway_is_probed_before_direct_fallback(self) -> None:
+    def test_redirect_url_is_probed_directly(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "movie.strm"
             source = (
@@ -86,23 +85,17 @@ class FfprobeSourceTest(unittest.TestCase):
             path.write_text(source + "\n", encoding="utf-8")
             calls = []
 
-            def fake_gateway(url: str) -> str:
-                return url.replace("/redirect_url", "/media_proxy") + "&media_token=test"
-
             def fake_probe(url: str, timeout: float = 40.0):
                 calls.append(url)
                 return {"source": "ffprobe", "streams": [{"stream_type": 1}]}
 
-            with patch.object(
-                ffprobe_module, "build_media_proxy_url", side_effect=fake_gateway
-            ), patch.object(ffprobe_module, "ffprobe_url", side_effect=fake_probe):
+            with patch.object(ffprobe_module, "ffprobe_url", side_effect=fake_probe):
                 result = FfprobeSource(cache_ttl=0).find_streams_by_name(str(path))
 
             self.assertIsNotNone(result)
             assert result is not None
-            self.assertEqual(result["probe_route"], "media_proxy")
-            self.assertIn("/media_proxy", calls[0])
-            self.assertEqual(parse_qs(urlsplit(calls[0]).query)["probe"], ["1"])
+            self.assertEqual(result["probe_route"], "direct")
+            self.assertEqual(calls, [source])
 
     def test_ffprobe_uses_bounded_network_options(self) -> None:
         completed = types.SimpleNamespace(
@@ -177,7 +170,7 @@ class MediaInfoCompleterTest(unittest.TestCase):
                 "part_id": 99,
                 "file": (
                     "https://mp.example/api/v1/plugin/P115StrmHelper/"
-                    "media_proxy?share_code=share123&receive_code=1234&id=99"
+                    "redirect_url?share_code=share123&receive_code=1234&id=99"
                 ),
             }
         ]

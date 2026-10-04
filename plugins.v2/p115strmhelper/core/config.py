@@ -284,10 +284,6 @@ class ConfigManager(BaseModel):
     strm_url_format: str = Field(
         default="pickcode", min_length=1, description="生成 STRM URL 格式"
     )
-    strm_media_proxy_enabled: bool = Field(
-        default=True,
-        description="通过 MoviePilot 媒体代理转发 STRM（使用资源级能力令牌鉴权，推荐开启）",
-    )
     link_redirect_mode: str = Field(
         default="cookie", min_length=1, description="302 跳转方式"
     )

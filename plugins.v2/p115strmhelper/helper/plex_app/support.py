@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from threading import Lock, Thread
 from time import monotonic, time
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from app.log import logger
 
@@ -33,9 +32,6 @@ class PlexAppSupport:
         self._full_completion_lock = Lock()
         self._full_completion_state: Dict[str, Any] = {"status": "idle"}
         self._helper_health_failures = 0
-        self._proxy_probe_lock = Lock()
-        self._proxy_probe_inflight: Set[str] = set()
-        self._proxy_probe_recent: Dict[str, float] = {}
 
     @staticmethod
     def _value(name: str, default: Any = None) -> Any:
@@ -80,7 +76,7 @@ class PlexAppSupport:
         except (TypeError, ValueError):
             timeout = 40
         try:
-            # ffprobe 会同时触发媒体网关和 Plex/Helper 侧的 IO。全库补全
+            # ffprobe 会同时触发 Plex/Helper 侧的 IO。全库补全
             # 以稳定写入为优先，硬上限 2，避免把原生 Plex 压到拒绝连接。
             concurrency = max(1, min(2, int(cls._value("concurrency", 3) or 3)))
         except (TypeError, ValueError):
@@ -147,13 +143,12 @@ class PlexAppSupport:
     def _log_summary(cls, scope: str, summary: Dict[str, Any]) -> None:
         if summary.get("total_strm_parts") is not None:
             logger.info(
-                "Plex App 媒体信息补全[%s]：全库 %s，扫描前完整 %s，候选 %s，解析 %s（网关 %s/直连回退 %s），写入 %s，扫描后完整 %s，仍待补 %s，未命中 %s，失败 %s，状态源 %s",
+                "Plex App 媒体信息补全[%s]：全库 %s，扫描前完整 %s，候选 %s，解析 %s（直连 %s），写入 %s，扫描后完整 %s，仍待补 %s，未命中 %s，失败 %s，状态源 %s",
                 scope,
                 summary.get("total_strm_parts", 0),
                 summary.get("completed_before", 0),
                 summary.get("strm_parts", 0),
                 summary.get("resolved", 0),
-                summary.get("gateway_hits", 0),
                 summary.get("direct_fallback_hits", 0),
                 summary.get("written_ok", 0),
                 summary.get("completed_after", 0),
@@ -164,11 +159,10 @@ class PlexAppSupport:
             )
             return
         logger.info(
-            "Plex App 媒体信息补全[%s]：处理 %s，解析 %s（网关 %s/直连回退 %s），写入 %s，未命中 %s，失败 %s，状态源 %s",
+            "Plex App 媒体信息补全[%s]：处理 %s，解析 %s（直连 %s），写入 %s，未命中 %s，失败 %s，状态源 %s",
             scope,
             summary.get("strm_parts", 0),
             summary.get("resolved", 0),
-            summary.get("gateway_hits", 0),
             summary.get("direct_fallback_hits", 0),
             summary.get("written_ok", 0),
             summary.get("unresolved", 0),
@@ -573,157 +567,6 @@ class PlexAppSupport:
             return False
         return True
 
-    def enqueue_media_proxy_probe(
-        self,
-        pickcode: str,
-        media_url: str,
-        file_name: str = "",
-        *,
-        share_code: str = "",
-        receive_code: str = "",
-        file_id: str = "",
-    ) -> bool:
-        """首次读取媒体代理时异步探测并写入当前 STRM 的媒体流信息"""
-        pickcode = str(pickcode or "").strip().lower()
-        media_url = str(media_url or "").strip()
-        share_code = str(share_code or "").strip()
-        receive_code = str(receive_code or "").strip()
-        file_id = str(file_id or "").strip()
-        if pickcode:
-            resource_key = f"pickcode:{pickcode}"
-            resource_kind = "pickcode"
-        elif share_code and receive_code and file_id:
-            resource_key = "share:" + hashlib.sha256(
-                "\x1f".join((share_code, receive_code, file_id)).encode("utf-8")
-            ).hexdigest()
-            resource_kind = "share"
-        else:
-            return False
-        if (
-            not media_url.startswith(("http://", "https://"))
-            or not self.configured()
-            or not bool(self._value("media_proxy_probe_enabled", True))
-        ):
-            return False
-        try:
-            ttl = max(
-                0,
-                min(
-                    86400,
-                    int(self._value("media_proxy_probe_cache_ttl", 300) or 300),
-                ),
-            )
-        except (TypeError, ValueError):
-            ttl = 300
-        now = monotonic()
-        with self._proxy_probe_lock:
-            for key, stamp in list(self._proxy_probe_recent.items()):
-                if ttl == 0 or now - stamp > ttl:
-                    self._proxy_probe_recent.pop(key, None)
-            if resource_key in self._proxy_probe_inflight:
-                return False
-            if ttl > 0 and resource_key in self._proxy_probe_recent:
-                return False
-            self._proxy_probe_inflight.add(resource_key)
-
-        def worker() -> None:
-            summary: Dict[str, Any] = {
-                "success": False,
-                "resource": resource_kind,
-                "file_name": file_name,
-                "ts": int(time()),
-            }
-            if pickcode:
-                summary["pickcode"] = pickcode
-            else:
-                summary["file_id"] = file_id
-            try:
-                # 延迟导入，保持独立单元测试可以使用最小 ffprobe stub。
-                from .ffprobe_source import ffprobe_url
-
-                try:
-                    timeout = max(
-                        1,
-                        min(300, int(self._value("ffprobe_timeout", 40) or 40)),
-                    )
-                except (TypeError, ValueError):
-                    timeout = 40
-                info = ffprobe_url(media_url, timeout=timeout)
-                if not info:
-                    summary["stage"] = "ffprobe"
-                    summary["error"] = "未解析到媒体流"
-                    return
-
-                plex = self._build_plex_client()
-                if not plex:
-                    summary["stage"] = "plex"
-                    summary["error"] = "Plex 配置不完整"
-                    return
-                part = plex.find_strm_part_by_resource(
-                    pickcode=pickcode,
-                    share_code=share_code,
-                    receive_code=receive_code,
-                    file_id=file_id,
-                    section_keys=self._selected_sections() or None,
-                )
-                if not part:
-                    summary["stage"] = "plex_lookup"
-                    summary["error"] = "未找到对应 STRM Part"
-                    return
-
-                payload = dict(info)
-                payload.pop("source", None)
-                payload["part_id"] = part["part_id"]
-                payload["overwrite_streams"] = bool(
-                    self._value("overwrite_streams", True)
-                )
-                helper_url = str(self._value("helper_url", "") or "").strip()
-                helper_token = str(self._value("helper_token", "") or "").strip()
-                helper = HelperClient(helper_url, helper_token, timeout=timeout)
-                result = helper.write_batch([payload], force=False)
-                summary["part_id"] = part["part_id"]
-                summary["stage"] = "helper"
-                if result is None:
-                    summary["error"] = "Helper 无响应"
-                    return
-                summary["helper_busy"] = bool(result.get("busy"))
-                summary["written_ok"] = int(result.get("ok", 0) or 0)
-                summary["success"] = not summary["helper_busy"] and summary["written_ok"] > 0
-                if not summary["success"]:
-                    summary["error"] = "Helper 未写入"
-            except Exception as exc:
-                summary["stage"] = "exception"
-                summary["error"] = str(exc)[:240]
-                logger.warning(
-                    "Plex App 媒体代理首次探测失败 resource=%s: %s",
-                    resource_key,
-                    exc,
-                )
-            finally:
-                self._save_result("plex_app_last_proxy_probe_result", summary)
-                with self._proxy_probe_lock:
-                    self._proxy_probe_inflight.discard(resource_key)
-                    self._proxy_probe_recent[resource_key] = monotonic()
-                if summary.get("success"):
-                    logger.info(
-                        "Plex App 媒体代理首次探测完成 resource=%s file=%s",
-                        resource_kind,
-                        file_name,
-                    )
-
-        try:
-            Thread(
-                target=worker,
-                daemon=True,
-                name="p115-plex-media-proxy-probe",
-            ).start()
-        except Exception:
-            with self._proxy_probe_lock:
-                self._proxy_probe_inflight.discard(resource_key)
-            logger.exception("Plex App 媒体代理探测 worker 启动失败")
-            return False
-        return True
-
     def complete_rating_key(
         self,
         rating_key: str,
@@ -806,8 +649,6 @@ class PlexAppSupport:
             pending = len(self._completion_queue)
         with self._full_completion_lock:
             completion = dict(self._full_completion_state)
-        with self._proxy_probe_lock:
-            pending_proxy = len(self._proxy_probe_inflight)
         last_result = self._get_result("plex_app_last_result")
         dashboard = {
             "status": completion.get("status") or "idle",
@@ -894,11 +735,7 @@ class PlexAppSupport:
             "dashboard": dashboard,
             "last_play_result": self._get_result("plex_app_last_play_result"),
             "last_marker_result": self._get_result("plex_app_last_marker_result"),
-            "last_proxy_probe_result": self._get_result(
-                "plex_app_last_proxy_probe_result"
-            ),
             "pending_play_probes": pending,
-            "pending_media_proxy_probes": pending_proxy,
         }
 
     def webhook_payload(self, payload_text: str) -> Dict[str, Any]:
