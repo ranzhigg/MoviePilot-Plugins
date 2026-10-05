@@ -3,10 +3,16 @@ __all__ = [
     "StrmFilenameTemplateResolver",
     "StrmUrlGetter",
     "StrmGenerater",
+    "get_source_mtime",
+    "write_strm_file",
 ]
 
 
+import os
+import stat
+import tempfile
 from pathlib import Path
+from time import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import quote
 
@@ -19,6 +25,128 @@ from jinja2.exceptions import TemplateError
 
 from ..core.config import configer
 from ..schemas.size import CompareMinSize
+
+
+def get_source_mtime(source: Any) -> Optional[float]:
+    """
+    获取源文件的稳定时间戳。
+
+    115 文件优先使用创建时间（ctime），这样新入库的文件在媒体服务器
+    中仍然保持“最后加入、最后显示”的语义；没有创建时间时回退到修改时间。
+    MoviePilot 的 FileItem 只有 ``modify_time``，也能通过同一入口处理。
+    """
+    keys = ("ctime", "create_time", "mtime", "modify_time")
+    for key in keys:
+        if isinstance(source, dict):
+            value = source.get(key)
+        else:
+            value = getattr(source, key, None)
+        if value in (None, "", 0, "0"):
+            continue
+        try:
+            timestamp = float(value)
+        except (TypeError, ValueError):
+            continue
+        # 部分接口返回毫秒时间戳，统一为 POSIX 秒。
+        if timestamp > 100_000_000_000:
+            timestamp /= 1000
+        if timestamp > 0:
+            return timestamp
+    return None
+
+
+def write_strm_file(
+    file_path: Path,
+    strm_url: str,
+    source_mtime: Optional[float] = None,
+) -> bool:
+    """
+    幂等、原子地写入 STRM 文件。
+
+    返回值表示内容或文件时间是否实际变化。内容未变化且文件时间已经
+    与源文件一致时完全不触碰文件；历史 STRM 若仍保留随机生成时间，
+    则在首次升级时校正为源文件时间，修复旧媒体库的乱序。
+    """
+    path = Path(file_path)
+    content = str(strm_url)
+    old_stat = None
+    source_timestamp = (
+        get_source_mtime({"mtime": source_mtime})
+        if source_mtime is not None
+        else None
+    )
+
+    if path.is_file():
+        try:
+            if path.read_text(encoding="utf-8") == content:
+                if source_timestamp is None:
+                    return False
+                current_stat = path.stat()
+                if abs(current_stat.st_mtime - source_timestamp) <= 1:
+                    return False
+                try:
+                    os.utime(
+                        path,
+                        ns=(
+                            current_stat.st_atime_ns,
+                            int(source_timestamp * 1_000_000_000),
+                        ),
+                    )
+                    return True
+                except OSError as exc:
+                    logger.debug(
+                        "【STRM生成】校正已有文件时间失败，保留文件系统时间: %s",
+                        exc,
+                    )
+                    return False
+            old_stat = path.stat()
+        except OSError:
+            # 文件可能正在被清理或替换，继续走原子写入流程。
+            old_stat = None
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        fd, temporary_path = tempfile.mkstemp(
+            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as temporary_file:
+            temporary_file.write(content)
+
+        # mkstemp 默认是 0600；尽量沿用旧文件或目录的普通文件权限，
+        # 避免升级为原子写入后 Plex 所在用户无法读取新建 STRM。
+        mode = (
+            stat.S_IMODE(old_stat.st_mode)
+            if old_stat is not None
+            else stat.S_IMODE(path.parent.stat().st_mode) & 0o666
+        ) or 0o644
+        os.chmod(temporary_path, mode)
+        os.replace(temporary_path, path)
+        temporary_path = None
+
+        try:
+            if source_timestamp is not None:
+                atime_ns = (
+                    old_stat.st_atime_ns
+                    if old_stat is not None
+                    else int(time() * 1_000_000_000)
+                )
+                os.utime(
+                    path,
+                    ns=(atime_ns, int(source_timestamp * 1_000_000_000)),
+                )
+            elif old_stat is not None:
+                os.utime(path, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
+        except OSError as exc:
+            # 时间戳只是排序提示，不能因为挂载盘不支持 utime 而判定 STRM 生成失败。
+            logger.debug("【STRM生成】同步文件时间失败，保留文件系统时间: %s", exc)
+        return True
+    finally:
+        if temporary_path:
+            try:
+                os.unlink(temporary_path)
+            except FileNotFoundError:
+                pass
 
 
 class StrmUrlTemplateResolver:

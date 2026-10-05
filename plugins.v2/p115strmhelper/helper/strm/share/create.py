@@ -31,7 +31,12 @@ from ....schemas.size import CompareMinSize
 from ....utils.path import PathUtils
 from ....utils.rename_dict import RenameDictUtils
 from ....utils.sentry import sentry_manager
-from ....utils.strm import StrmGenerater, StrmUrlGetter
+from ....utils.strm import (
+    StrmGenerater,
+    StrmUrlGetter,
+    get_source_mtime,
+    write_strm_file,
+)
 
 from .audit_download_queue import share_audit_download_queue
 from .oof import ShareFilesDataCollector, ShareOOPServerHelper
@@ -152,9 +157,18 @@ class ShareStrmHelper:
         else:
             return
 
+        paths = []
         while len(self.scrape_refresh_queue) != 0:
-            path = self.scrape_refresh_queue.popleft()
-            func(Path(path))
+            paths.append(Path(self.scrape_refresh_queue.popleft()))
+
+        def _sort_key(path: Path) -> Tuple[float, str]:
+            try:
+                return path.stat().st_mtime, str(path)
+            except OSError:
+                return 0, str(path)
+
+        for path in sorted(paths, key=_sort_key):
+            func(path)
 
     def mp_transfer(self) -> None:
         """
@@ -315,7 +329,11 @@ class ShareStrmHelper:
                 item["path"],
             )
 
-            new_file_path.write_text(strm_url, encoding="utf-8")
+            strm_changed = write_strm_file(
+                new_file_path,
+                strm_url,
+                source_mtime=get_source_mtime(item),
+            )
             with self.strm_count_lock:
                 if new_file_path_str not in self._strm_generated_paths:
                     self.strm_count += 1
@@ -350,7 +368,7 @@ class ShareStrmHelper:
             if config.moviepilot_transfer:
                 self.mp_transfer_queue.append(new_file_path)
 
-            if config.media_server_refresh or config.scrape_metadata:
+            if (config.media_server_refresh and strm_changed) or config.scrape_metadata:
                 self.scrape_refresh_queue.append(new_file_path)
         except Exception as e:
             sentry_manager.sentry_hub.capture_exception(e)

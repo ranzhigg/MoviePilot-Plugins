@@ -22,7 +22,12 @@ from ...helper.mediainfo_download import MediaInfoDownloader
 from ...helper.mediaserver import MediaServerRefresh, emby_mediainfo_queue
 from ...utils.path import PathRemoveUtils, PathUtils
 from ...utils.sentry import sentry_manager
-from ...utils.strm import StrmUrlGetter, StrmGenerater
+from ...utils.strm import (
+    StrmUrlGetter,
+    StrmGenerater,
+    get_source_mtime,
+    write_strm_file,
+)
 
 
 class TransferStrmHelper:
@@ -36,6 +41,7 @@ class TransferStrmHelper:
         pan_media_dir: str,
         item_dest_path: Path,
         url: str,
+        source_mtime: Optional[float] = None,
     ):
         """
         依据网盘路径生成 STRM 文件
@@ -59,9 +65,11 @@ class TransferStrmHelper:
                 PathUtils.sanitize_path_parts(Path(item_dest_path.name))
             )
             new_file_path = file_path / file_name
-            new_file_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(new_file_path, "w", encoding="utf-8") as file:
-                file.write(url)
+            write_strm_file(
+                new_file_path,
+                url,
+                source_mtime=source_mtime,
+            )
             logger.info(
                 "【监控整理STRM生成】生成 STRM 文件成功: %s", str(new_file_path)
             )
@@ -416,6 +424,7 @@ class TransferStrmHelper:
             pan_media_dir=pan_media_dir,
             item_dest_path=Path(item_dest_path),
             url=strm_url,
+            source_mtime=get_source_mtime(item_transfer.target_item),
         )
         if not status:
             return

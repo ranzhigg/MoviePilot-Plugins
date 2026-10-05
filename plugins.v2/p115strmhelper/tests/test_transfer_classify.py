@@ -290,6 +290,8 @@ def _setup_mock_env() -> None:
         "app.plugins.p115strmhelper.utils.strm",
         StrmUrlGetter=object,
         StrmGenerater=object,
+        get_source_mtime=lambda source: None,
+        write_strm_file=lambda *args, **kwargs: True,
     )
 
 

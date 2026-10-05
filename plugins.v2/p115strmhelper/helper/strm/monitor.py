@@ -5,7 +5,12 @@ from app.schemas import FileItem
 
 from ...utils.path import PathUtils
 from ...utils.sentry import sentry_manager
-from ...utils.strm import StrmGenerater, StrmUrlGetter
+from ...utils.strm import (
+    StrmGenerater,
+    StrmUrlGetter,
+    get_source_mtime,
+    write_strm_file,
+)
 
 
 class MonitorStrmHelper:
@@ -61,8 +66,11 @@ class MonitorStrmHelper:
             strm_name = StrmGenerater.get_strm_filename(Path(uploaded_file_item.name))
             strm_path = out_dir / strm_name
 
-            with open(strm_path, "w", encoding="utf-8") as f:
-                f.write(strm_url)
+            write_strm_file(
+                strm_path,
+                strm_url,
+                source_mtime=get_source_mtime(uploaded_file_item),
+            )
 
             logger.info(f"【目录上传】生成 STRM 成功: {strm_path}")
             return True

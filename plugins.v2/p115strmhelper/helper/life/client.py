@@ -19,7 +19,12 @@ from ...utils.storage_item import (
     resolve_file_via_parent_list,
 )
 from ...utils.sentry import sentry_manager
-from ...utils.strm import StrmUrlGetter, StrmGenerater
+from ...utils.strm import (
+    StrmUrlGetter,
+    StrmGenerater,
+    get_source_mtime,
+    write_strm_file,
+)
 from ...utils.automaton import AutomatonUtils
 from ...utils.mediainfo_download import MediainfoDownloadMiddleware
 from ...utils.http import check_iter_path_data
@@ -692,13 +697,17 @@ class MonitorLife:
                             pickcode, original_file_name, item["path"]
                         )
 
-                        with open(new_file_path, "w", encoding="utf-8") as file:
-                            file.write(strm_url)
+                        strm_changed = write_strm_file(
+                            new_file_path,
+                            strm_url,
+                            source_mtime=get_source_mtime(item),
+                        )
                         logger.info(
                             "【监控生活事件】生成 STRM 文件成功: %s",
                             str(new_file_path),
                         )
                         strm_count += 1
+                        should_refresh = strm_changed
                         scrape_metadata = True
                         if configer.get_config("monitor_life_scrape_metadata_enabled"):
                             if configer.get_config(
@@ -716,11 +725,13 @@ class MonitorLife:
                                     scrape_metadata = False
                             if scrape_metadata:
                                 media_scrape_metadata(path=new_file_path)
+                                should_refresh = True
                         # 刷新媒体服务器
-                        self.mediaserver_helper.refresh_mediaserver(
-                            file_path=str(new_file_path),
-                            file_name=str(original_file_name),
-                        )
+                        if should_refresh:
+                            self.mediaserver_helper.refresh_mediaserver(
+                                file_path=str(new_file_path),
+                                file_name=str(original_file_name),
+                            )
                         if configer.monitor_life_emby_mediainfo_enabled and (
                             configer.native_emby_mediainfo_enabled or item.get("sha1")
                         ):
@@ -857,11 +868,15 @@ class MonitorLife:
                     pickcode, original_file_name, file_path=file_path_string
                 )
 
-                with open(new_file_path, "w", encoding="utf-8") as file:
-                    file.write(strm_url)
+                strm_changed = write_strm_file(
+                    new_file_path,
+                    strm_url,
+                    source_mtime=get_source_mtime(event),
+                )
                 logger.info(
                     "【监控生活事件】生成 STRM 文件成功: %s", str(new_file_path)
                 )
+                should_refresh = strm_changed
                 scrape_metadata = True
                 if configer.get_config("monitor_life_scrape_metadata_enabled"):
                     if configer.get_config(
@@ -879,11 +894,13 @@ class MonitorLife:
                             scrape_metadata = False
                     if scrape_metadata:
                         media_scrape_metadata(path=new_file_path)
+                        should_refresh = True
                 # 刷新媒体服务器
-                self.mediaserver_helper.refresh_mediaserver(
-                    file_path=new_file_path.as_posix(),
-                    file_name=str(original_file_name),
-                )
+                if should_refresh:
+                    self.mediaserver_helper.refresh_mediaserver(
+                        file_path=new_file_path.as_posix(),
+                        file_name=str(original_file_name),
+                    )
                 if configer.monitor_life_emby_mediainfo_enabled and (
                     configer.native_emby_mediainfo_enabled or event.get("sha1")
                 ):
@@ -1688,9 +1705,7 @@ class MonitorLife:
                 )
                 return False, False
             try:
-                strm_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(strm_path, "w", encoding="utf-8") as f:
-                    f.write(expected)
+                write_strm_file(strm_path, expected)
                 logger.info(
                     "【监控生活事件】%s STRM 已按事件创建: %s",
                     scene,
@@ -1723,8 +1738,7 @@ class MonitorLife:
             )
             return True, False
         try:
-            with open(strm_path, "w", encoding="utf-8") as f:
-                f.write(expected)
+            write_strm_file(strm_path, expected)
             logger.info(
                 "【监控生活事件】%s STRM 内容已按事件更新: %s",
                 scene,

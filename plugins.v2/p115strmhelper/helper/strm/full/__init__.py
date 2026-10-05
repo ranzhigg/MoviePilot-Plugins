@@ -5,7 +5,6 @@ from collections import namedtuple
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from itertools import batched
 from pathlib import Path
-from os import makedirs
 from queue import Empty, Queue
 from secrets import token_hex
 from threading import Thread
@@ -37,7 +36,12 @@ from ....utils.exception import (
 from ....utils.mediainfo_download import MediainfoDownloadMiddleware
 from ....utils.path import PathUtils, PathRemoveUtils
 from ....utils.sentry import sentry_manager
-from ....utils.strm import StrmUrlGetter, StrmGenerater
+from ....utils.strm import (
+    StrmUrlGetter,
+    StrmGenerater,
+    get_source_mtime,
+    write_strm_file,
+)
 from ....utils.tree import DirectoryTree
 from ....utils.http import check_iter_path_data
 from ..api import delete_blacklisted_pan_file
@@ -86,6 +90,7 @@ class FullSyncStrmHelper:
         self.elapsed_time = 0
         self.total_db_write_count = 0
         self.strm_count = 0
+        self.strm_changed_count = 0
         self.mediainfo_count = 0
         self.strm_fail_count = 0
         self.mediainfo_fail_count = 0
@@ -158,6 +163,14 @@ class FullSyncStrmHelper:
         """
         log_method = getattr(logger, level)
         log_method(msg, *args)
+
+    @staticmethod
+    def __write_sort_key(
+        task: Tuple[Path, str, str, Optional[float]],
+    ) -> Tuple[bool, float, str]:
+        """按源文件时间升序提交，保证最新入库项最后落盘。"""
+        source_mtime = task[3]
+        return (source_mtime is None, source_mtime or 0, str(task[0]))
 
     def __get_remove_unless_strm(self, path_base64: str) -> Dict:
         """
@@ -345,7 +358,7 @@ class FullSyncStrmHelper:
         buffer_size = 64
 
         while True:
-            tasks: List[Tuple[Path, str, str]] = []
+            tasks: List[Tuple[Path, str, str, Optional[float]]] = []
             task_done_handled = False
             try:
                 first_task = self.write_queue.get()
@@ -375,55 +388,27 @@ class FullSyncStrmHelper:
                     for _ in tasks:
                         self.write_queue.task_done()
 
-    def __flush_write_buffer(self, tasks: List[Tuple[Path, str, str]]):
+    def __flush_write_buffer(self, tasks: List[Tuple[Path, str, str, Optional[float]]]):
         """
         批量处理写入任务
         """
-        for new_file_path, strm_url, original_file_name in tasks:
+        for new_file_path, strm_url, original_file_name, source_mtime in tasks:
             try:
-                with open(new_file_path, "w", encoding="utf-8") as file:
-                    file.write(strm_url)
+                changed = write_strm_file(
+                    new_file_path,
+                    strm_url,
+                    source_mtime=source_mtime,
+                )
 
                 self.result_queue.put(
                     ProcessResult(
                         status="success",
                         path=str(new_file_path),
                         message=None,
-                        data=None,
+                        data=changed,
                         path_entry=None,
                     )
                 )
-            except FileNotFoundError:
-                try:
-                    makedirs(new_file_path.parent, exist_ok=True)
-                    with open(new_file_path, "w", encoding="utf-8") as file:
-                        file.write(strm_url)
-
-                    self.result_queue.put(
-                        ProcessResult(
-                            status="success",
-                            path=str(new_file_path),
-                            message=None,
-                            data=None,
-                            path_entry=None,
-                        )
-                    )
-                except Exception as e:
-                    sentry_manager.sentry_hub.capture_exception(e)
-                    logger.error(
-                        "【全量STRM生成】写入 STRM 文件失败: %s  %s",
-                        str(new_file_path),
-                        e,
-                    )
-                    self.result_queue.put(
-                        ProcessResult(
-                            status="fail",
-                            path=str(new_file_path),
-                            message=str(e),
-                            data=None,
-                            path_entry=None,
-                        )
-                    )
             except Exception as e:
                 sentry_manager.sentry_hub.capture_exception(e)
                 logger.error(
@@ -673,13 +658,16 @@ class FullSyncStrmHelper:
             strm_url = self.strmurlgetter.get_strm_url(
                 pickcode, original_file_name, item.get("path")
             )
-            self.write_queue.put((new_file_path, strm_url, original_file_name))
-
             return ProcessResult(
                 status="submitted",
                 path=None,
                 message=None,
-                data=None,
+                data=(
+                    new_file_path,
+                    strm_url,
+                    original_file_name,
+                    get_source_mtime(item),
+                ),
                 path_entry=path_entry,
             )
         except Exception as e:
@@ -798,7 +786,9 @@ class FullSyncStrmHelper:
         rust = configer.full_sync_process_rust
         media_paths = full_sync_strm_paths.split("\n")
 
-        num_io_workers = 8
+        # STRM 很小，真正影响媒体库排序的是目录项的提交顺序；保留上游
+        # 的并发数据处理，但使用单一提交者，避免多个 I/O worker 乱序落盘。
+        num_io_workers = 1
         io_threads = []
         for _ in range(num_io_workers):
             thread = Thread(target=self.__io_writer_worker)
@@ -819,6 +809,8 @@ class FullSyncStrmHelper:
                         continue
                     if result.status == "success":
                         self.strm_count += 1
+                        if result.data:
+                            self.strm_changed_count += 1
                     elif result.status == "fail":
                         self.strm_fail_count += 1
                         self.strm_fail_dict[result.path] = result.message
@@ -921,6 +913,9 @@ class FullSyncStrmHelper:
                         int(configer.get_config("full_sync_batch_num")),
                     ):
                         path_list: List = []
+                        write_tasks: List[
+                            Tuple[Path, str, str, Optional[float]]
+                        ] = []
 
                         db_task_future = executor.submit(
                             self.__process_db_item,
@@ -944,6 +939,11 @@ class FullSyncStrmHelper:
                                 for item in batch
                                 if item.get("name") and item.get("path")
                             ]
+                            source_mtime_by_path = {
+                                item.get("path"): get_source_mtime(item)
+                                for item in batch
+                                if item.get("path")
+                            }
 
                             self.total_count += len(input_batch)
 
@@ -1007,11 +1007,14 @@ class FullSyncStrmHelper:
                                     strm_info.original_file_name,
                                     strm_info.path_in_pan,
                                 )
-                                self.write_queue.put(
+                                write_tasks.append(
                                     (
                                         new_file_path,
                                         strm_url,
                                         strm_info.original_file_name,
+                                        source_mtime_by_path.get(
+                                            strm_info.path_in_pan
+                                        ),
                                     )
                                 )
 
@@ -1051,6 +1054,8 @@ class FullSyncStrmHelper:
                                         )
                                     elif result.status == "download":
                                         self.download_mediainfo_list.append(result.data)
+                                    elif result.status == "submitted":
+                                        write_tasks.append(result.data)
 
                                     if result.path_entry:
                                         path_list.append(result.path_entry)
@@ -1068,6 +1073,9 @@ class FullSyncStrmHelper:
                             logger.error(
                                 f"【全量STRM生成】数据库处理并发处理出错: {str(e)}"
                             )
+
+                        for write_task in sorted(write_tasks, key=self.__write_sort_key):
+                            self.write_queue.put(write_task)
 
                         if self.remove_unless_strm:
                             self.pan_tree.generate_tree_from_list(
@@ -1187,7 +1195,11 @@ class FullSyncStrmHelper:
             )
         )
 
-        if self.mediaserver_helper.enabled:
+        if self.mediaserver_helper.enabled and (
+            self.strm_changed_count
+            or self.mediainfo_count
+            or self.remove_unless_strm_count
+        ):
             logger.info(
                 "【全量STRM生成】开始刷新整个媒体库，此操作会刷新所有媒体服务器"
             )

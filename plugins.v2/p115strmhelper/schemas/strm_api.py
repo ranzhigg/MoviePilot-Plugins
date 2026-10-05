@@ -38,6 +38,9 @@ class StrmApiData(BaseModel):
     local_path: Optional[str] = Field(default=None, description="本地路径")
     pan_path: Optional[str] = Field(default=None, description="网盘路径")
     pan_media_path: Optional[str] = Field(default=None, description="网盘媒体库路径")
+    source_mtime: Optional[float] = Field(
+        default=None, description="源文件时间戳，用于保持媒体库新增排序"
+    )
     media_server_refresh: Optional[bool] = Field(
         default=None, description="是否刷新媒体服务器"
     )

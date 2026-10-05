@@ -27,7 +27,12 @@ from ...schemas.strm_api import (
     StrmApiStatusCode,
 )
 from ...utils.tree import DirectoryTree
-from ...utils.strm import StrmUrlGetter, StrmGenerater
+from ...utils.strm import (
+    StrmUrlGetter,
+    StrmGenerater,
+    get_source_mtime,
+    write_strm_file,
+)
 from ...utils.path import PathUtils, PathRemoveUtils
 from ...utils.sentry import sentry_manager
 
@@ -110,6 +115,7 @@ class ApiSyncStrmHelper:
             pan_path = item.pan_path
             sha1 = item.sha1
             size = item.size
+            source_mtime = item.source_mtime
             local_path = item.local_path
             pan_media_path = item.pan_media_path
 
@@ -134,6 +140,7 @@ class ApiSyncStrmHelper:
                     pan_path = file_info.get("path")
                     sha1 = file_info.get("sha1")
                     size = file_info.get("size_byte")
+                    source_mtime = get_source_mtime(file_info)
                     sleep(self.cooldown)
                 except Exception as e:
                     logger.error(f"【API_STRM生成】获取文件信息失败: {e}")
@@ -283,6 +290,7 @@ class ApiSyncStrmHelper:
                 id=file_id,
                 local_path=local_path,
                 pan_media_path=pan_media_path,
+                source_mtime=source_mtime,
                 scrape_metadata=scrape_metadata,
                 media_server_refresh=media_server_refresh,
                 auto_download_mediainfo=auto_download_mediainfo,
@@ -290,9 +298,11 @@ class ApiSyncStrmHelper:
 
             strm_url = self.strm_url_getter.get_strm_url(pick_code, name, pan_path)
             try:
-                new_file_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(new_file_path, "w", encoding="utf-8") as file:
-                    file.write(strm_url)
+                strm_changed = write_strm_file(
+                    new_file_path,
+                    strm_url,
+                    source_mtime=source_mtime,
+                )
             except Exception as e:
                 sentry_manager.sentry_hub.capture_exception(e)
                 fail_data.append(
@@ -316,7 +326,7 @@ class ApiSyncStrmHelper:
                 logger.info(f"【API_STRM生成】{new_file_path.as_posix()} 开始刮削...")
                 media_scrape_metadata(new_file_path.as_posix())
 
-            if media_server_refresh:
+            if media_server_refresh and (strm_changed or scrape_metadata):
                 media_refresh_helper = MediaServerRefresh(
                     func_name="【API_STRM生成】",
                     enabled=media_server_refresh,
@@ -430,6 +440,7 @@ class ApiSyncStrmHelper:
                             name=item["name"],
                             sha1=item["sha1"],
                             size=item["size"],
+                            source_mtime=get_source_mtime(item),
                             pan_path=item["path"],
                             media_server_refresh=payload.media_server_refresh,
                             scrape_metadata=payload.scrape_metadata,

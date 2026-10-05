@@ -44,7 +44,12 @@ from ...utils.math import MathUtils
 from ...utils.mediainfo_download import MediainfoDownloadMiddleware
 from ...utils.path import PathRemoveUtils, PathUtils
 from ...utils.sentry import sentry_manager
-from ...utils.strm import StrmGenerater, StrmUrlGetter
+from ...utils.strm import (
+    StrmGenerater,
+    StrmUrlGetter,
+    get_source_mtime,
+    write_strm_file,
+)
 from ...utils.tree import DirectoryTree
 from .api import delete_blacklisted_pan_file
 
@@ -404,6 +409,11 @@ class IncrementSyncStrmHelper:
                 return size
         return None
 
+    def __get_source_mtime(self, path: str) -> Optional[float]:
+        """从增量同步数据库读取网盘源文件时间。"""
+        data = self.databasehelper.get_by_path(path=path)
+        return get_source_mtime(data) if data else None
+
     def __get_pickcode_sha1(self, path: str) -> Tuple[str, str]:
         """
         通过路径获取 pick_code, sha1
@@ -722,8 +732,11 @@ class IncrementSyncStrmHelper:
                 pickcode, pan_path_obj.name, pan_path
             )
 
-            with open(new_file_path, "w", encoding="utf-8") as file:
-                file.write(strm_url)
+            strm_changed = write_strm_file(
+                new_file_path,
+                strm_url,
+                source_mtime=self.__get_source_mtime(pan_path),
+            )
             self.strm_count += 1
             logger.info(
                 "【增量STRM生成】生成 STRM 文件成功: %s",
@@ -740,6 +753,7 @@ class IncrementSyncStrmHelper:
             self.strm_fail_dict[str(new_file_path)] = str(e)
             return
 
+        should_refresh = strm_changed
         if self.scrape_metadata_enabled:
             scrape_metadata = True
             if self.scrape_metadata_exclude_paths:
@@ -755,10 +769,12 @@ class IncrementSyncStrmHelper:
                 media_scrape_metadata(
                     path=local_path,
                 )
-        self.mediaserver_helper.refresh_mediaserver(
-            file_path=local_path,
-            file_name=new_file_path.name,
-        )
+                should_refresh = True
+        if should_refresh:
+            self.mediaserver_helper.refresh_mediaserver(
+                file_path=local_path,
+                file_name=new_file_path.name,
+            )
 
         if self.emby_mediainfo_enabled and (
             configer.native_emby_mediainfo_enabled or sha1
