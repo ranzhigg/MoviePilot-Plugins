@@ -92,13 +92,37 @@ def init_migration_scripts() -> bool:
     # 确保目标目录存在，如果不存在则递归创建
     target_path.mkdir(parents=True, exist_ok=True)
 
-    # 遍历源目录中的所有条目
+    # 清理 macOS 在共享目录中生成的 AppleDouble 迁移脚本残留。
+    # 这类 ._*.py 文件通常包含资源元数据而不是 Python 源码，且可能含 NUL
+    # 字节；Alembic 扫描 versions 目录时会尝试加载它们并报
+    # "source code string cannot contain null bytes"。
+    try:
+        for target_item in target_path.iterdir():
+            if (
+                target_item.is_file()
+                and target_item.name.startswith("._")
+                and target_item.suffix == ".py"
+            ):
+                target_item.unlink()
+                logger.debug(f"已清理无效迁移脚本残留: {target_item.name}")
+    except IOError as e:
+        logger.error(f"清理无效迁移脚本残留时发生 I/O 错误: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"清理无效迁移脚本残留时发生未知错误: {e}")
+        return False
+
+    # 遍历源目录中的所有条目，只持久化真正的 Python 迁移脚本。
     logger.debug(f"开始同步迁移脚本从 {source_path} 到 {target_path}...")
     files_copied = 0
     try:
         for source_item in source_path.iterdir():
             # 只处理文件，忽略任何可能的子目录（如 __pycache__）
-            if source_item.is_file():
+            if (
+                source_item.is_file()
+                and not source_item.name.startswith(".")
+                and source_item.suffix == ".py"
+            ):
                 # 构建目标文件的完整路径
                 destination_file = target_path / source_item.name
 
