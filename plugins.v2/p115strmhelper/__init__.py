@@ -7,6 +7,10 @@ from pathlib import Path
 from re import search as re_search
 from typing import Any, List, Dict, Tuple, Optional, Union
 
+from .compat import patch_concurrenttools
+
+patch_concurrenttools()
+
 from app.core.config import settings
 from app.core.event import eventmanager, Event
 from app.log import logger
