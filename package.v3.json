@@ -223,7 +223,7 @@
         "name": "STRM逐条通知",
         "description": "监控指定目录的新 STRM，等待对应 NFO/封面后发送逐条媒体通知，支持持久化去重",
         "labels": "通知",
-        "version": "3.0.3",
+        "version": "3.0.4",
         "release": true,
         "icon": "https://raw.githubusercontent.com/ranzhigg/MoviePilot-Plugins/main/icons/StrmNotify.svg",
         "author": "ranzhigg",
