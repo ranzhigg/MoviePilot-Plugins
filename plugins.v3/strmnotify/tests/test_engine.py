@@ -31,6 +31,24 @@ class TestEngine(TestCase):
         state = engine.reconcile(state, {}, 20)
         self.assertEqual(engine.reconcile(state, {"file": 2}, 30)["pending"], {"file": 30})
 
+    def test_reconcile_and_pending_candidates_are_deterministic(self):
+        """多目录队列按时间、目录和文件名稳定排序，避免单目录长期占满配额"""
+        state = {
+            "/media/b": {"known": [], "pending": {"/media/b/z.strm": 20}},
+            "/media/a": {"known": [], "pending": {"/media/a/a.strm": 20}},
+        }
+        self.assertEqual(
+            engine.pending_candidates(state),
+            [(20.0, "/media/a", "/media/a/a.strm"), (20.0, "/media/b", "/media/b/z.strm")],
+        )
+        reconciled = engine.reconcile(
+            {"known": ["old"], "pending": {}},
+            {"z": 1, "a": 2},
+            30,
+        )
+        self.assertEqual(reconciled["known"], ["a", "z"])
+        self.assertEqual(list(reconciled["pending"]), ["a", "z"])
+
     def test_scan_and_unavailable_directory(self):
         """仅扫描 STRM，不跟随符号链接且不可用根目录报错"""
         with TemporaryDirectory() as folder:
@@ -81,3 +99,10 @@ class TestEngine(TestCase):
                 self.assertIsNone(engine.metadata(video, 100))
             nfo.write_text('<movie><title>Movie</title></movie>')
             self.assertIsNone(engine.metadata(video, nfo.stat().st_mtime + 1))
+
+    def test_missing_nfo_is_retryable(self):
+        """缺失 NFO 时返回等待状态而不是让扫描任务失败"""
+        with TemporaryDirectory() as folder:
+            video = Path(folder) / "one.strm"
+            video.touch()
+            self.assertIsNone(engine.metadata(video, 100))

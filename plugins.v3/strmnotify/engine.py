@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 from xml.etree import ElementTree
 
@@ -17,11 +17,15 @@ def scan(root: Path) -> Dict[str, float]:
         raise error
 
     for directory, _, files in os.walk(root, followlinks=False, onerror=fail):
-        for name in files:
+        for name in sorted(files, key=str.casefold):
             path = Path(directory) / name
             if path.suffix.lower() == ".strm" and not path.is_symlink():
-                result[str(path)] = path.stat().st_mtime
-    return result
+                try:
+                    result[str(path)] = path.stat().st_mtime
+                except OSError:
+                    # 文件可能在扫描过程中被整理器移动，跳过本次观察即可。
+                    continue
+    return dict(sorted(result.items()))
 
 
 def metadata(path: Path, now: float) -> Optional[dict]:
@@ -34,10 +38,13 @@ def metadata(path: Path, now: float) -> Optional[dict]:
         nfo = path.parent / "movie.nfo"
     if not nfo.is_file():
         return None
-    stat = nfo.stat()
+    try:
+        stat = nfo.stat()
+        raw = nfo.read_bytes()
+    except OSError:
+        return None
     if now - stat.st_mtime < 2 or stat.st_size > 2 * 1024 * 1024:
         return None
-    raw = nfo.read_bytes()
     try:
         raw = raw.decode("utf-8-sig").encode("utf-8")
     except UnicodeDecodeError:
@@ -74,8 +81,31 @@ def reconcile(previous: Optional[dict], files: Dict[str, float], now: float) -> 
     """首次仅建立基线，后续只为新增路径加入待通知队列"""
     if previous is None:
         return {"known": sorted(files), "pending": {}}
-    known = set(previous.get("known", []))
-    pending = {p: t for p, t in previous.get("pending", {}).items() if p in files}
-    for path in files.keys() - known:
-        pending[path] = now
-    return {"known": sorted(files), "pending": pending}
+    known = {str(path) for path in previous.get("known", []) if str(path).strip()}
+    previous_pending = previous.get("pending", {})
+    pending = {
+        str(path): started
+        for path, started in previous_pending.items()
+        if str(path) in files
+    } if isinstance(previous_pending, dict) else {}
+    for path in sorted(files.keys() - known):
+        pending.setdefault(path, now)
+    return {
+        "known": sorted(files),
+        "pending": {path: pending[path] for path in sorted(pending)},
+    }
+
+
+def pending_candidates(state: Dict[str, dict]) -> List[Tuple[float, str, str]]:
+    """按进入待处理队列的时间返回所有目录候选，保证多目录轮询公平。"""
+    candidates: List[Tuple[float, str, str]] = []
+    for root, record in state.items():
+        if not isinstance(record, dict) or not isinstance(record.get("pending"), dict):
+            continue
+        for path, started in record["pending"].items():
+            try:
+                timestamp = float(started)
+            except (TypeError, ValueError):
+                continue
+            candidates.append((timestamp, str(root), str(path)))
+    return sorted(candidates, key=lambda item: (item[0], item[1], item[2]))

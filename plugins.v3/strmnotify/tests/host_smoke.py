@@ -32,7 +32,7 @@ with TemporaryDirectory() as directory:
   cover = '<thumb>https://example.invalid/one.jpg</thumb>' if name == 'one' else ''
   p=root/f'{name}.nfo';p.write_text(f'<movie><title>{name}</title>{cover}</movie>');os.utime(p,(0,0))
  plugin.poll();assert plugin.post_message.call_count==1
- assert str(root/'two.strm') in storage['state'][str(root)]['pending']
+ assert str(root.resolve()/'two.strm') in storage['state'][str(root.resolve())]['pending']
  with patch.object(module, 'time', return_value=module.time()+121):
   plugin.poll()
  assert plugin.post_message.call_count==2
@@ -48,15 +48,15 @@ with TemporaryDirectory() as directory:
  with patch.object(module, 'time', return_value=module.time()+121):
   plugin.poll()
  assert plugin.save_data.call_count==1
- assert not storage['state'][str(root)]['pending']
+ assert not storage['state'][str(root.resolve())]['pending']
  retry=root/'retry.strm';retry.touch()
  retry_nfo=retry.with_suffix('.nfo');retry_nfo.write_text('<movie><title>retry</title><thumb>https://example.invalid/retry.jpg</thumb></movie>');os.utime(retry_nfo,(0,0))
  plugin.post_message.side_effect=RuntimeError('simulated failure')
  plugin.poll()
- assert str(retry) in storage['state'][str(root)]['pending']
+ assert str(retry.resolve()) in storage['state'][str(root.resolve())]['pending']
  plugin.save_data.reset_mock();plugin.poll();assert plugin.save_data.call_count==0
  plugin.post_message.side_effect=None
- plugin.poll();assert not storage['state'][str(root)]['pending']
+ plugin.poll();assert not storage['state'][str(root.resolve())]['pending']
  delivered=plugin.post_message.call_count
  plugin.stop_service();(root/'three.strm').touch();plugin.poll();assert plugin.post_message.call_count==delivered
 print('PASS: real MP plugin load/form/service; baseline; batch; persisted dedup; disable; unchanged scans write zero times; waiting, timeout and retry persistence; mocked delivery only')
