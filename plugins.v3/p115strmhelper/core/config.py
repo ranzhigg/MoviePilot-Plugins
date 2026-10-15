@@ -300,6 +300,16 @@ class ConfigManager(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _validate_cron_fields_before(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        # V3.0.3 将全量 STRM 的排序契约拆成了两个显式配置。旧配置只有
+        # ``full_sync_order_by_user_ptime_desc``，这里在加载时补齐新字段，避免
+        # 升级后已有实例退回到无序并发生成。
+        data = dict(data or {})
+        legacy_ordered = bool(data.get("full_sync_order_by_user_ptime_desc", True))
+        if data.get("full_sync_sync_mode") not in {"directory_tree", "fast"}:
+            data["full_sync_sync_mode"] = "directory_tree" if legacy_ordered else "fast"
+        if data.get("full_sync_generate_mode") not in {"ordered", "parallel"}:
+            data["full_sync_generate_mode"] = "ordered" if legacy_ordered else "parallel"
+
         cron_fields = ["cron_full_sync_strm", "increment_sync_cron", "cron_clear"]
         for field in cron_fields:
             val = data.get(field)
@@ -356,6 +366,23 @@ class ConfigManager(BaseModel):
         """
         if self.hdhive_checkin_daily_enabled and self.hdhive_checkin_gamble_enabled:
             self.hdhive_checkin_gamble_enabled = False
+        return self
+
+    @model_validator(mode="after")
+    def _sync_full_sync_legacy_order_flag(self) -> "ConfigManager":
+        """
+        将旧排序开关保持为新模式的兼容镜像。
+
+        旧版插件及旧版前端仍可能读取该字段；真正的全量同步运行时以两个
+        新字段为准。使用 ``object.__setattr__`` 避免在 ``validate_assignment``
+        开启时触发递归校验。
+        """
+        object.__setattr__(
+            self,
+            "full_sync_order_by_user_ptime_desc",
+            self.full_sync_sync_mode == "directory_tree"
+            and self.full_sync_generate_mode == "ordered",
+        )
         return self
 
     @model_validator(mode="after")
@@ -494,6 +521,14 @@ class ConfigManager(BaseModel):
         default=None,
         description="全量同步路径，每行格式为 本地目录#网盘目录，行尾可加 #0 表示该目录不参与全量同步",
     )
+    full_sync_sync_mode: Literal["directory_tree", "fast"] = Field(
+        default="directory_tree",
+        description="全量同步遍历模式：按115目录树与入库时间顺序同步，或兼容快速模式",
+    )
+    full_sync_generate_mode: Literal["ordered", "parallel"] = Field(
+        default="ordered",
+        description="全量STRM生成模式：严格有序落盘，或并发生成",
+    )
     full_sync_strm_log: bool = Field(default=True, description="全量生成输出详细日志")
     full_sync_batch_num: Union[int, str] = Field(
         default=5_000, description="全量同步单次批处理量"
@@ -508,7 +543,7 @@ class ConfigManager(BaseModel):
     )
     full_sync_order_by_user_ptime_desc: bool = Field(
         default=True,
-        description="全量同步按115入库时间倒序遍历（后入库优先）",
+        description="全量同步反向读取115入库顺序，使Plex/Infuse默认按日期倒序显示新入库在前",
     )
     full_sync_process_rust: bool = Field(
         default=False, description="全量同步处理数据使用 rust 模块"

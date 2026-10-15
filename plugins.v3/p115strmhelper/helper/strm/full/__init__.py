@@ -134,16 +134,27 @@ class FullSyncStrmHelper:
         """
         获取全量同步的网盘遍历器和参数。
 
-        115 的 ``user_ptime`` 是文件在网盘中的创建/入库时间。默认使用降序
-        （``asc=0``），让后入库的文件先进入 STRM 生成流水线；保留旧的 skim
-        遍历作为显式关闭排序后的兼容回退。
+        目录树模式反向读取 115 当前列表顺序。实测直接按 115 顺序落盘时，
+        Infuse 只有“日期已添加”升序才会与 115 一致；严格模式改为反向落盘，
+        让 Plex/Infuse 默认按日期倒序时直接显示新入库在前、旧入库在后。
+        快速模式保留旧的 skim 遍历，明确不提供顺序保证。
         """
-        if configer.get_config("full_sync_order_by_user_ptime_desc"):
+        sync_mode = configer.get_config("full_sync_sync_mode")
+        if sync_mode not in {"directory_tree", "fast"}:
+            sync_mode = (
+                "directory_tree"
+                if configer.get_config("full_sync_order_by_user_ptime_desc")
+                else "fast"
+            )
+
+        if sync_mode == "directory_tree":
             return iter_files, {
                 "with_path": True,
                 "order": "user_ptime",
                 "asc": 0,
-                "max_workers": None,
+                # iter_offset 文档明确说明并发分页可能乱序；严格模式必须
+                # 使用单 worker，保证 115 返回顺序传递到 STRM 写入队列。
+                "max_workers": 0,
                 "cid": parent_id,
                 "with_ancestors": True,
                 "cooldown": 1.5,
@@ -160,7 +171,7 @@ class FullSyncStrmHelper:
         return iter_files, {
             "with_path": True,
             "order": "user_ptime",
-            "asc": 1,
+            "asc": 0,
             "max_workers": None,
             "cid": parent_id,
             "with_ancestors": True,
@@ -168,6 +179,20 @@ class FullSyncStrmHelper:
             "use_media_api": False,
             **configer.get_ios_ua_app(),
         }
+
+    @staticmethod
+    def __get_full_sync_generate_mode() -> str:
+        """
+        获取 STRM 落盘模式，并兼容旧版排序开关。
+        """
+        generate_mode = configer.get_config("full_sync_generate_mode")
+        if generate_mode in {"ordered", "parallel"}:
+            return generate_mode
+        return (
+            "ordered"
+            if configer.get_config("full_sync_order_by_user_ptime_desc")
+            else "parallel"
+        )
 
     def __del__(self):
         self._clean_tree()
@@ -815,9 +840,7 @@ class FullSyncStrmHelper:
         rust = configer.full_sync_process_rust
         media_paths = full_sync_strm_paths.split("\n")
 
-        preserve_strm_order = bool(
-            configer.get_config("full_sync_order_by_user_ptime_desc")
-        )
+        preserve_strm_order = self.__get_full_sync_generate_mode() == "ordered"
         num_io_workers = 1 if preserve_strm_order else 8
         io_threads = []
         for _ in range(num_io_workers):

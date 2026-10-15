@@ -42,6 +42,8 @@ class TestV3FullWorkerLifecycle(TestCase):
             full_sync_process_num=1,
             full_sync_iter_function="iter_files_with_path_skim",
             full_sync_order_by_user_ptime_desc=False,
+            full_sync_sync_mode=None,
+            full_sync_generate_mode=None,
             full_sync_batch_num=1,
         )
         self.namespace = dict(
@@ -91,12 +93,12 @@ class TestV3FullWorkerLifecycle(TestCase):
             lambda key: False if key == "notify" else f"{self.temporary.name}#/media"
         )
         self.config.get_ios_ua_app = lambda: {}
-        self.config.get_config = lambda key: getattr(self.config, key)
+        self.config.get_config = lambda key: getattr(self.config, key, None)
         self.addCleanup(self._cleanup)
 
-    def test_full_sync_iterator_uses_newest_first_when_enabled(self) -> None:
+    def test_full_sync_iterator_reverses_115_order_for_date_descending(self) -> None:
         """
-        开启倒序后使用 user_ptime 降序，而不是无序 skim 遍历。
+        开启顺序同步后反向读取 115 顺序，使 Plex/Infuse 日期倒序显示新入库在前。
         """
         self.config.full_sync_order_by_user_ptime_desc = True
         iterator, kwargs = self.helper._FullSyncStrmHelper__get_full_sync_iterator(42)
@@ -105,6 +107,37 @@ class TestV3FullWorkerLifecycle(TestCase):
         self.assertEqual(kwargs["cid"], 42)
         self.assertEqual(kwargs["order"], "user_ptime")
         self.assertEqual(kwargs["asc"], 0)
+        self.assertEqual(kwargs["max_workers"], 0)
+
+    def test_directory_tree_mode_keeps_newest_first_in_date_sorted_libraries(self) -> None:
+        """
+        目录树同步即使旧兼容开关关闭，也必须反向读取 115 列表，供 Plex/Infuse
+        通过文件时间按日期倒序直接展示新到旧。
+        """
+        self.config.full_sync_order_by_user_ptime_desc = False
+        self.config.full_sync_sync_mode = "directory_tree"
+        self.config.full_sync_generate_mode = "ordered"
+        iterator, kwargs = self.helper._FullSyncStrmHelper__get_full_sync_iterator(42)
+
+        self.assertIs(iterator, self.namespace["iter_files"])
+        self.assertEqual(kwargs["order"], "user_ptime")
+        self.assertEqual(kwargs["asc"], 0)
+        self.assertEqual(kwargs["max_workers"], 0)
+
+    def test_generate_mode_controls_ordered_writer(self) -> None:
+        """
+        新配置优先于旧开关，目录树模式默认使用单一有序写入者。
+        """
+        self.config.full_sync_generate_mode = "ordered"
+        self.assertEqual(
+            self.helper._FullSyncStrmHelper__get_full_sync_generate_mode(),
+            "ordered",
+        )
+        self.config.full_sync_generate_mode = "parallel"
+        self.assertEqual(
+            self.helper._FullSyncStrmHelper__get_full_sync_generate_mode(),
+            "parallel",
+        )
 
     def _thread(self, *args: Any, **kwargs: Any) -> Thread:
         thread = Thread(*args, **kwargs)

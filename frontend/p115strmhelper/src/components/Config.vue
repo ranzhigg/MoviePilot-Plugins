@@ -324,6 +324,8 @@ const config = reactive({
   full_sync_media_server_refresh_delay: 0,
   full_sync_mediaservers: [],
   full_sync_auto_download_mediainfo_enabled: false,
+  full_sync_sync_mode: 'directory_tree',
+  full_sync_generate_mode: 'ordered',
   full_sync_strm_log: true,
   full_sync_batch_num: 5000,
   full_sync_process_num: 128,

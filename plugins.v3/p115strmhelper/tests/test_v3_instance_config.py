@@ -142,6 +142,22 @@ class TestV3InstanceConfig(TestCase):
         self.assertNotIn("plugin_id", payload)
         self.assertEqual(payload, config.model_dump(mode="json"))
 
+    def test_full_sync_order_modes_migrate_legacy_configuration(self) -> None:
+        """
+        旧版排序开关升级后映射到目录树同步和有序生成模式。
+        """
+        legacy_disabled = self.config_type(full_sync_order_by_user_ptime_desc=False)
+        self.assertEqual(legacy_disabled.full_sync_sync_mode, "fast")
+        self.assertEqual(legacy_disabled.full_sync_generate_mode, "parallel")
+        self.assertFalse(legacy_disabled.full_sync_order_by_user_ptime_desc)
+
+        ordered = self.config_type(
+            full_sync_order_by_user_ptime_desc=False,
+            full_sync_sync_mode="directory_tree",
+            full_sync_generate_mode="ordered",
+        )
+        self.assertTrue(ordered.full_sync_order_by_user_ptime_desc)
+
     def test_data_is_scoped_to_each_bound_owner(self) -> None:
         """
         本体和分身通过各自实例保存与读取相同数据键
