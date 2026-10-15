@@ -543,7 +543,7 @@ class ConfigManager(BaseModel):
     )
     full_sync_order_by_user_ptime_desc: bool = Field(
         default=True,
-        description="全量同步反向读取115入库顺序，使Plex/Infuse默认按日期倒序显示新入库在前",
+        description="全量同步按115入库时间从旧到新遍历并顺序落盘，让最新文件最后获得本地修改时间，使Plex/Infuse默认日期倒序显示新入库在前",
     )
     full_sync_process_rust: bool = Field(
         default=False, description="全量同步处理数据使用 rust 模块"

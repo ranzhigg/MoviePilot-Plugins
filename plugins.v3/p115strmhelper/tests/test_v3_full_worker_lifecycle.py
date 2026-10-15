@@ -96,9 +96,9 @@ class TestV3FullWorkerLifecycle(TestCase):
         self.config.get_config = lambda key: getattr(self.config, key, None)
         self.addCleanup(self._cleanup)
 
-    def test_full_sync_iterator_reverses_115_order_for_date_descending(self) -> None:
+    def test_full_sync_iterator_preserves_115_write_order_for_date_descending(self) -> None:
         """
-        开启顺序同步后反向读取 115 顺序，使 Plex/Infuse 日期倒序显示新入库在前。
+        开启顺序同步后按 115 旧到新读取并顺序落盘，使最新文件获得最新本地时间。
         """
         self.config.full_sync_order_by_user_ptime_desc = True
         iterator, kwargs = self.helper._FullSyncStrmHelper__get_full_sync_iterator(42)
@@ -106,12 +106,12 @@ class TestV3FullWorkerLifecycle(TestCase):
         self.assertIs(iterator, self.namespace["iter_files"])
         self.assertEqual(kwargs["cid"], 42)
         self.assertEqual(kwargs["order"], "user_ptime")
-        self.assertEqual(kwargs["asc"], 0)
+        self.assertEqual(kwargs["asc"], 1)
         self.assertEqual(kwargs["max_workers"], 0)
 
     def test_directory_tree_mode_keeps_newest_first_in_date_sorted_libraries(self) -> None:
         """
-        目录树同步即使旧兼容开关关闭，也必须反向读取 115 列表，供 Plex/Infuse
+        目录树同步即使旧兼容开关关闭，也必须按 115 旧到新读取，供 Plex/Infuse
         通过文件时间按日期倒序直接展示新到旧。
         """
         self.config.full_sync_order_by_user_ptime_desc = False
@@ -121,7 +121,7 @@ class TestV3FullWorkerLifecycle(TestCase):
 
         self.assertIs(iterator, self.namespace["iter_files"])
         self.assertEqual(kwargs["order"], "user_ptime")
-        self.assertEqual(kwargs["asc"], 0)
+        self.assertEqual(kwargs["asc"], 1)
         self.assertEqual(kwargs["max_workers"], 0)
 
     def test_generate_mode_controls_ordered_writer(self) -> None:

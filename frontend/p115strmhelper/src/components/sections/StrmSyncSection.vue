@@ -224,13 +224,13 @@
                 <v-select v-model="config.full_sync_generate_mode" label="生成模式" :items="[
                   { title: '严格有序生成（推荐）', value: 'ordered' },
                   { title: '并发生成（速度优先）', value: 'parallel' }
-                ]" hint="严格有序模式反向于115当前列表落盘，Plex/Infuse默认按日期倒序时新内容在前" persistent-hint
+                ]" hint="严格有序模式按115旧到新顺序写入，最新内容最后落盘；Plex/Infuse按日期倒序时新内容在前" persistent-hint
                   density="compact"></v-select>
               </v-col>
             </v-row>
             <v-alert v-if="config.full_sync_sync_mode === 'directory_tree' && config.full_sync_generate_mode === 'ordered'"
               type="success" variant="tonal" density="compact" class="mb-4" icon="mdi-sort-calendar-descending">
-              当前为顺序保证模式：Plex 和 Infuse 默认按“日期已添加”倒序时会与 115 的新入库顺序一致。插件会反向读取 115 列表并单 worker 落盘，避免媒体库日期顺序反转。
+              当前为顺序保证模式：Plex 和 Infuse 默认按“日期已添加”倒序时会与 115 的新入库顺序一致。插件按 115 旧到新读取并由单 worker 顺序落盘，让最新内容最后获得最新文件时间。
             </v-alert>
             <v-alert v-else type="warning" variant="tonal" density="compact" class="mb-4" icon="mdi-alert-outline">
               当前配置不会保证全量 STRM 的日期顺序。若要让 Plex/Infuse 与 115 保持“新在前、旧在后”，请使用“115目录树同步 + 严格有序生成”。

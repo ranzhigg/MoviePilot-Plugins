@@ -134,10 +134,10 @@ class FullSyncStrmHelper:
         """
         获取全量同步的网盘遍历器和参数。
 
-        目录树模式反向读取 115 当前列表顺序。实测直接按 115 顺序落盘时，
-        Infuse 只有“日期已添加”升序才会与 115 一致；严格模式改为反向落盘，
-        让 Plex/Infuse 默认按日期倒序时直接显示新入库在前、旧入库在后。
-        快速模式保留旧的 skim 遍历，明确不提供顺序保证。
+        目录树模式按 115 的入库时间从旧到新读取，并由单 worker 顺序落盘。
+        Infuse/Plex 的“日期已添加”依据本地文件时间排序，因此让最新条目最后
+        写入，才能在日期倒序时显示新入库在前、旧入库在后。快速模式保留旧的
+        skim 遍历，明确不提供顺序保证。
         """
         sync_mode = configer.get_config("full_sync_sync_mode")
         if sync_mode not in {"directory_tree", "fast"}:
@@ -151,7 +151,7 @@ class FullSyncStrmHelper:
             return iter_files, {
                 "with_path": True,
                 "order": "user_ptime",
-                "asc": 0,
+                "asc": 1,
                 # iter_offset 文档明确说明并发分页可能乱序；严格模式必须
                 # 使用单 worker，保证 115 返回顺序传递到 STRM 写入队列。
                 "max_workers": 0,
@@ -171,7 +171,7 @@ class FullSyncStrmHelper:
         return iter_files, {
             "with_path": True,
             "order": "user_ptime",
-            "asc": 0,
+            "asc": 1,
             "max_workers": None,
             "cid": parent_id,
             "with_ancestors": True,
