@@ -20,7 +20,7 @@
         "name": "115网盘STRM助手",
         "description": "115网盘STRM生成一条龙服务",
         "labels": "云盘",
-        "version": "3.0.8",
+        "version": "3.0.7",
         "icon": "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png",
         "author": "DDSRem",
         "release": true,
@@ -28,7 +28,6 @@
         "v3t": false,
         "level": 1,
         "history": {
-            "v3.0.8": "规避 115 proapi 目录接口风控，目录树枚举改用 web 接口并移除移动端 User-Agent",
             "v3.0.7": "修复目录树同步使用 web 接口导致 405，统一使用可用的 iOS 接口枚举 115 目录",
             "v3.0.6": "修复全量同步按文件时间全局排序导致媒体目录顺序错乱，改为按115目录修改时间构建目录树后顺序落盘",
             "v3.0.5": "修正日期排序方向：按115旧到新顺序落盘，让最新文件获得最新修改时间，Plex/Infuse默认日期倒序时最新在前",

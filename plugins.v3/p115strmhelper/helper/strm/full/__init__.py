@@ -149,8 +149,7 @@ class FullSyncStrmHelper:
 
         115 网盘界面的媒体目录顺序使用目录的 user_utime，而 iter_files 只会按
         文件字段全局排序。先获取文件，再读取文件所属目录的直接子目录元数据，
-        最后按目录树深度优先遍历，可避免同一媒体目录被文件时间打散。目录列表
-        使用 web 接口，避开 proapi 目录接口的 405 风控
+        最后按目录树深度优先遍历，可避免同一媒体目录被文件时间打散
         """
         file_items = list(
             iter_files(
@@ -183,8 +182,6 @@ class FullSyncStrmHelper:
 
         children_by_parent: Dict[int, List[Tuple[int, int, str, Dict[str, Any]]]] = {}
         sequence = 0
-        directory_request_kwargs = dict(request_kwargs)
-        directory_request_kwargs.pop("headers", None)
 
         def append_child(parent_id: int, kind: str, item: Dict[str, Any]) -> None:
             """
@@ -214,8 +211,8 @@ class FullSyncStrmHelper:
                 max_workers=0,
                 cooldown=cooldown,
                 use_media_api=use_media_api,
-                app="web",
-                **directory_request_kwargs,
+                app=app,
+                **request_kwargs,
             ):
                 if item.get("is_dir"):
                     append_child(int(item["parent_id"]), "dir", item)
