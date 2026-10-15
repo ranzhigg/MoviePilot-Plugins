@@ -206,7 +206,8 @@ class TestV3FullWorkerLifecycle(TestCase):
         self.namespace["iterdir"].side_effect = fake_iterdir
         ordered = list(iterator(object(), **kwargs))
         self.assertEqual([item["id"] for item in ordered], [2, 1])
-        self.assertEqual(self.namespace["iterdir"].call_args.kwargs["app"], "ios")
+        self.assertEqual(self.namespace["iterdir"].call_args.kwargs["app"], "web")
+        self.assertNotIn("headers", self.namespace["iterdir"].call_args.kwargs)
 
     def _thread(self, *args: Any, **kwargs: Any) -> Thread:
         thread = Thread(*args, **kwargs)
