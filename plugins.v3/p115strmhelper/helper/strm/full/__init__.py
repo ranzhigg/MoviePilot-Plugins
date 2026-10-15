@@ -141,7 +141,7 @@ class FullSyncStrmHelper:
         max_workers: int = 0,
         cooldown: Optional[float] = None,
         use_media_api: bool = False,
-        app: str = "android",
+        app: str = "ios",
         **request_kwargs: Any,
     ):
         """
@@ -211,7 +211,7 @@ class FullSyncStrmHelper:
                 max_workers=0,
                 cooldown=cooldown,
                 use_media_api=use_media_api,
-                app="web",
+                app=app,
                 **request_kwargs,
             ):
                 if item.get("is_dir"):

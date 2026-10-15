@@ -93,7 +93,7 @@ class TestV3FullWorkerLifecycle(TestCase):
         self.fixture.namespace["configer"].get_config.side_effect = (
             lambda key: False if key == "notify" else f"{self.temporary.name}#/media"
         )
-        self.config.get_ios_ua_app = lambda: {}
+        self.config.get_ios_ua_app = lambda: {"app": "ios"}
         self.config.get_config = lambda key: getattr(self.config, key, None)
         self.addCleanup(self._cleanup)
 
@@ -206,6 +206,7 @@ class TestV3FullWorkerLifecycle(TestCase):
         self.namespace["iterdir"].side_effect = fake_iterdir
         ordered = list(iterator(object(), **kwargs))
         self.assertEqual([item["id"] for item in ordered], [2, 1])
+        self.assertEqual(self.namespace["iterdir"].call_args.kwargs["app"], "ios")
 
     def _thread(self, *args: Any, **kwargs: Any) -> Thread:
         thread = Thread(*args, **kwargs)
