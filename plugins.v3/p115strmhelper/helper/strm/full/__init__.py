@@ -130,6 +130,45 @@ class FullSyncStrmHelper:
         else:
             self.__base_logger = self.__base_no_logger
 
+    def __get_full_sync_iterator(self, parent_id: int):
+        """
+        获取全量同步的网盘遍历器和参数。
+
+        115 的 ``user_ptime`` 是文件在网盘中的创建/入库时间。默认使用降序
+        （``asc=0``），让后入库的文件先进入 STRM 生成流水线；保留旧的 skim
+        遍历作为显式关闭排序后的兼容回退。
+        """
+        if configer.get_config("full_sync_order_by_user_ptime_desc"):
+            return iter_files, {
+                "with_path": True,
+                "order": "user_ptime",
+                "asc": 0,
+                "max_workers": None,
+                "cid": parent_id,
+                "with_ancestors": True,
+                "cooldown": 1.5,
+                "use_media_api": False,
+                **configer.get_ios_ua_app(),
+            }
+        if configer.get_config("full_sync_iter_function") == "iter_files_with_path_skim":
+            return iter_files_skim, {
+                "with_path": True,
+                "cid": parent_id,
+                "with_ancestors": True,
+                **configer.get_ios_ua_app(),
+            }
+        return iter_files, {
+            "with_path": True,
+            "order": "user_ptime",
+            "asc": 1,
+            "max_workers": None,
+            "cid": parent_id,
+            "with_ancestors": True,
+            "cooldown": 1.5,
+            "use_media_api": False,
+            **configer.get_ios_ua_app(),
+        }
+
     def __del__(self):
         self._clean_tree()
 
@@ -438,10 +477,17 @@ class FullSyncStrmHelper:
                 )
 
     def __process_single_item(
-        self, item: Dict, target_dir: Path, pan_media_dir: str
+        self,
+        item: Dict,
+        target_dir: Path,
+        pan_media_dir: str,
+        enqueue_write: bool = True,
     ) -> Optional[ProcessResult]:
         """
-        处理单个项目
+        处理单个项目。
+
+        ``enqueue_write=False`` 时只返回待写入任务，由调用方按云端遍历顺序
+        排队，避免线程完成顺序打乱 STRM 文件的本地创建顺序。
         """
         path_entry = None
         try:
@@ -660,13 +706,15 @@ class FullSyncStrmHelper:
             strm_url = self.strmurlgetter.get_strm_url(
                 pickcode, original_file_name, item.get("path")
             )
-            self.write_queue.put((new_file_path, strm_url, original_file_name))
+            write_task = (new_file_path, strm_url, original_file_name)
+            if enqueue_write:
+                self.write_queue.put(write_task)
 
             return ProcessResult(
                 status="submitted",
                 path=None,
                 message=None,
-                data=None,
+                data=None if enqueue_write else write_task,
                 path_entry=path_entry,
             )
         except Exception as e:
@@ -714,29 +762,7 @@ class FullSyncStrmHelper:
                 return False
 
             try:
-                if (
-                    configer.get_config("full_sync_iter_function")
-                    == "iter_files_with_path_skim"
-                ):
-                    iter_func = iter_files_skim
-                    iter_kwargs = {
-                        "with_path": True,
-                        "cid": parent_id,
-                        "with_ancestors": True,
-                        **configer.get_ios_ua_app(),
-                    }
-                else:
-                    iter_func = iter_files
-                    iter_kwargs = {
-                        "with_path": True,
-                        "order": "user_ptime",
-                        "max_workers": None,
-                        "cid": parent_id,
-                        "with_ancestors": True,
-                        "cooldown": 1.5,
-                        "use_media_api": False,
-                        **configer.get_ios_ua_app(),
-                    }
+                iter_func, iter_kwargs = self.__get_full_sync_iterator(parent_id)
                 logger.debug(
                     f"【全量STRM生成】迭代函数 {iter_func}; 参数 {iter_kwargs}"
                 )
@@ -789,7 +815,10 @@ class FullSyncStrmHelper:
         rust = configer.full_sync_process_rust
         media_paths = full_sync_strm_paths.split("\n")
 
-        num_io_workers = 8
+        preserve_strm_order = bool(
+            configer.get_config("full_sync_order_by_user_ptime_desc")
+        )
+        num_io_workers = 1 if preserve_strm_order else 8
         io_threads = []
         for _ in range(num_io_workers):
             thread = Thread(target=self.__io_writer_worker)
@@ -884,29 +913,9 @@ class FullSyncStrmHelper:
                         return False
 
                     try:
-                        if (
-                            configer.get_config("full_sync_iter_function")
-                            == "iter_files_with_path_skim"
-                        ):
-                            iter_func = iter_files_skim
-                            iter_kwargs = {
-                                "with_path": True,
-                                "cid": parent_id,
-                                "with_ancestors": True,
-                                **configer.get_ios_ua_app(),
-                            }
-                        else:
-                            iter_func = iter_files
-                            iter_kwargs = {
-                                "with_path": True,
-                                "order": "user_ptime",
-                                "max_workers": None,
-                                "cid": parent_id,
-                                "with_ancestors": True,
-                                "cooldown": 1.5,
-                                "use_media_api": False,
-                                **configer.get_ios_ua_app(),
-                            }
+                        iter_func, iter_kwargs = self.__get_full_sync_iterator(
+                            parent_id
+                        )
                         logger.debug(
                             f"【全量STRM生成】迭代函数 {iter_func}; 参数 {iter_kwargs}"
                         )
@@ -1028,35 +1037,58 @@ class FullSyncStrmHelper:
                                         item,
                                         target_dir_path,
                                         pan_media_dir,
-                                    ): item
-                                    for item in batch
+                                        not preserve_strm_order,
+                                    ): (index, item)
+                                    for index, item in enumerate(batch)
                                 }
 
                                 self.total_count += len(future_to_item)
 
+                                completed_results = {}
                                 for future in as_completed(future_to_item):
-                                    item = future_to_item[future]
+                                    index, item = future_to_item[future]
                                     try:
                                         result = future.result()
-                                        if not result:
-                                            continue
+                                        if preserve_strm_order:
+                                            completed_results[index] = result
+                                        elif result:
+                                            if result.status == "fail":
+                                                self.strm_fail_count += 1
+                                                self.strm_fail_dict[result.path] = (
+                                                    result.message
+                                                )
+                                            elif result.status == "download":
+                                                self.download_mediainfo_list.append(
+                                                    result.data
+                                                )
 
-                                        if result.status == "fail":
-                                            self.strm_fail_count += 1
-                                            self.strm_fail_dict[result.path] = (
-                                                result.message
-                                            )
-                                        elif result.status == "download":
-                                            self.download_mediainfo_list.append(result.data)
-
-                                        if result.path_entry:
-                                            path_list.append(result.path_entry)
+                                            if result.path_entry:
+                                                path_list.append(result.path_entry)
 
                                     except Exception as e:
                                         sentry_manager.sentry_hub.capture_exception(e)
                                         logger.error(
                                             f"【全量STRM生成】并发处理出错: {item} - {str(e)}"
                                         )
+
+                                if preserve_strm_order:
+                                    for index in range(len(batch)):
+                                        result = completed_results.get(index)
+                                        if not result:
+                                            continue
+                                        if result.status == "submitted":
+                                            self.write_queue.put(result.data)
+                                        elif result.status == "fail":
+                                            self.strm_fail_count += 1
+                                            self.strm_fail_dict[result.path] = (
+                                                result.message
+                                            )
+                                        elif result.status == "download":
+                                            self.download_mediainfo_list.append(
+                                                result.data
+                                            )
+                                        if result.path_entry:
+                                            path_list.append(result.path_entry)
 
                             try:
                                 seen_folder_ids, seen_file_ids = db_task_future.result()

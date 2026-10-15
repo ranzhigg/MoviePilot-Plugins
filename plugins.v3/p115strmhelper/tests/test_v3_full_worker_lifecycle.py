@@ -41,6 +41,7 @@ class TestV3FullWorkerLifecycle(TestCase):
             full_sync_process_rust=False,
             full_sync_process_num=1,
             full_sync_iter_function="iter_files_with_path_skim",
+            full_sync_order_by_user_ptime_desc=False,
             full_sync_batch_num=1,
         )
         self.namespace = dict(
@@ -52,6 +53,7 @@ class TestV3FullWorkerLifecycle(TestCase):
             MediaInfoDownloader=object, CBase64=MagicMock(),
             StrmExecHistoryManager=MagicMock(), sentry_manager=MagicMock(),
             get_pid_by_path=MagicMock(return_value=1),
+            iter_files=MagicMock(return_value=iter(())),
             iter_files_skim=MagicMock(return_value=iter(())),
             ProcessResult=namedtuple(
                 "ProcessResult", ["status", "path", "message", "data", "path_entry"]
@@ -91,6 +93,18 @@ class TestV3FullWorkerLifecycle(TestCase):
         self.config.get_ios_ua_app = lambda: {}
         self.config.get_config = lambda key: getattr(self.config, key)
         self.addCleanup(self._cleanup)
+
+    def test_full_sync_iterator_uses_newest_first_when_enabled(self) -> None:
+        """
+        开启倒序后使用 user_ptime 降序，而不是无序 skim 遍历。
+        """
+        self.config.full_sync_order_by_user_ptime_desc = True
+        iterator, kwargs = self.helper._FullSyncStrmHelper__get_full_sync_iterator(42)
+
+        self.assertIs(iterator, self.namespace["iter_files"])
+        self.assertEqual(kwargs["cid"], 42)
+        self.assertEqual(kwargs["order"], "user_ptime")
+        self.assertEqual(kwargs["asc"], 0)
 
     def _thread(self, *args: Any, **kwargs: Any) -> Thread:
         thread = Thread(*args, **kwargs)

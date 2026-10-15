@@ -506,6 +506,10 @@ class ConfigManager(BaseModel):
         min_length=1,
         description="全量同步使用的函数",
     )
+    full_sync_order_by_user_ptime_desc: bool = Field(
+        default=True,
+        description="全量同步按115入库时间倒序遍历（后入库优先）",
+    )
     full_sync_process_rust: bool = Field(
         default=False, description="全量同步处理数据使用 rust 模块"
     )
