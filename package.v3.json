@@ -20,7 +20,7 @@
         "name": "115网盘STRM助手",
         "description": "115网盘STRM生成一条龙服务",
         "labels": "云盘",
-        "version": "3.0.5",
+        "version": "3.0.6",
         "icon": "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png",
         "author": "DDSRem",
         "release": true,
@@ -28,6 +28,7 @@
         "v3t": false,
         "level": 1,
         "history": {
+            "v3.0.6": "修复全量同步按文件时间全局排序导致媒体目录顺序错乱，改为按115目录修改时间构建目录树后顺序落盘",
             "v3.0.5": "修正日期排序方向：按115旧到新顺序落盘，让最新文件获得最新修改时间，Plex/Infuse默认日期倒序时最新在前",
             "v3.0.4": "修复日期排序方向：严格目录树模式反向于115当前列表落盘，使Plex/Infuse默认按日期倒序时新入库在前、旧入库在后",
             "v3.0.3": "新增目录树同步与 STRM 生成模式；默认按 115 入库顺序单 worker 从旧到新有序落盘，确保 Plex/Infuse 按日期排序时新入库在前、旧入库在后；兼容旧排序配置",

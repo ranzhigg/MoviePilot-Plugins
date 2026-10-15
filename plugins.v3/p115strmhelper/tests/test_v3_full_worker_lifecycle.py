@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from threading import Event, Thread
 from time import perf_counter
 from types import MethodType, SimpleNamespace
-from typing import Any, Dict, Generator, List, Optional, Set, Tuple
+from typing import Any, Dict, Generator, Iterator, List, Optional, Set, Tuple
 from unittest import TestCase
 from unittest.mock import MagicMock
 
@@ -57,6 +57,7 @@ class TestV3FullWorkerLifecycle(TestCase):
             get_pid_by_path=MagicMock(return_value=1),
             iter_files=MagicMock(return_value=iter(())),
             iter_files_skim=MagicMock(return_value=iter(())),
+            iterdir=MagicMock(return_value=iter(())),
             ProcessResult=namedtuple(
                 "ProcessResult", ["status", "path", "message", "data", "path_entry"]
             ),
@@ -103,9 +104,12 @@ class TestV3FullWorkerLifecycle(TestCase):
         self.config.full_sync_order_by_user_ptime_desc = True
         iterator, kwargs = self.helper._FullSyncStrmHelper__get_full_sync_iterator(42)
 
-        self.assertIs(iterator, self.namespace["iter_files"])
+        self.assertEqual(
+            iterator.__name__,
+            "__iter_files_by_directory_tree",
+        )
         self.assertEqual(kwargs["cid"], 42)
-        self.assertEqual(kwargs["order"], "user_ptime")
+        self.assertEqual(kwargs["order"], "user_utime")
         self.assertEqual(kwargs["asc"], 1)
         self.assertEqual(kwargs["max_workers"], 0)
 
@@ -119,8 +123,11 @@ class TestV3FullWorkerLifecycle(TestCase):
         self.config.full_sync_generate_mode = "ordered"
         iterator, kwargs = self.helper._FullSyncStrmHelper__get_full_sync_iterator(42)
 
-        self.assertIs(iterator, self.namespace["iter_files"])
-        self.assertEqual(kwargs["order"], "user_ptime")
+        self.assertEqual(
+            iterator.__name__,
+            "__iter_files_by_directory_tree",
+        )
+        self.assertEqual(kwargs["order"], "user_utime")
         self.assertEqual(kwargs["asc"], 1)
         self.assertEqual(kwargs["max_workers"], 0)
 
@@ -138,6 +145,67 @@ class TestV3FullWorkerLifecycle(TestCase):
             self.helper._FullSyncStrmHelper__get_full_sync_generate_mode(),
             "parallel",
         )
+
+    def test_directory_tree_uses_folder_time_not_file_time(self) -> None:
+        """
+        文件自身时间不同于媒体目录时间时仍按目录顺序输出
+        """
+        self.config.full_sync_order_by_user_ptime_desc = True
+        iterator, kwargs = self.helper._FullSyncStrmHelper__get_full_sync_iterator(42)
+        old_file = {
+            "id": 1,
+            "parent_id": 100,
+            "name": "old.mkv",
+            "path": "/root/old/old.mkv",
+            "user_utime": 999,
+            "ancestors": [
+                {"id": 42, "parent_id": 0, "name": "root"},
+                {"id": 100, "parent_id": 42, "name": "old"},
+                {"id": 1, "parent_id": 100, "name": "old.mkv"},
+            ],
+        }
+        new_file = {
+            "id": 2,
+            "parent_id": 101,
+            "name": "new.mkv",
+            "path": "/root/new/new.mkv",
+            "user_utime": 1,
+            "ancestors": [
+                {"id": 42, "parent_id": 0, "name": "root"},
+                {"id": 101, "parent_id": 42, "name": "new"},
+                {"id": 2, "parent_id": 101, "name": "new.mkv"},
+            ],
+        }
+        self.namespace["iter_files"].return_value = iter([old_file, new_file])
+
+        def fake_iterdir(_client: Any, cid: int, **_kwargs: Any) -> Iterator[Dict]:
+            """
+            返回测试目录的直接子目录
+            """
+            if cid == 42:
+                return iter(
+                    [
+                        {
+                            "id": 100,
+                            "parent_id": 42,
+                            "name": "old",
+                            "is_dir": True,
+                            "user_utime": 20,
+                        },
+                        {
+                            "id": 101,
+                            "parent_id": 42,
+                            "name": "new",
+                            "is_dir": True,
+                            "user_utime": 10,
+                        },
+                    ]
+                )
+            return iter(())
+
+        self.namespace["iterdir"].side_effect = fake_iterdir
+        ordered = list(iterator(object(), **kwargs))
+        self.assertEqual([item["id"] for item in ordered], [2, 1])
 
     def _thread(self, *args: Any, **kwargs: Any) -> Thread:
         thread = Thread(*args, **kwargs)

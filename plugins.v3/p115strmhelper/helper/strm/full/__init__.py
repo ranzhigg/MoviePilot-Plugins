@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from orjson import dumps
 from p115client import P115Client
-from p115client.tool.iterdir import iter_files, iter_files_skim
+from p115client.tool.iterdir import iter_files, iter_files_skim, iterdir
 
 from app.sdk.config import settings
 from app.sdk.logging import logger
@@ -130,14 +130,137 @@ class FullSyncStrmHelper:
         else:
             self.__base_logger = self.__base_no_logger
 
+    def __iter_files_by_directory_tree(
+        self,
+        client: P115Client,
+        cid: int,
+        order: str = "user_utime",
+        asc: int = 1,
+        with_path: bool = True,
+        with_ancestors: bool = True,
+        max_workers: int = 0,
+        cooldown: Optional[float] = None,
+        use_media_api: bool = False,
+        app: str = "android",
+        **request_kwargs: Any,
+    ):
+        """
+        按 115 目录树顺序返回文件
+
+        115 网盘界面的媒体目录顺序使用目录的 user_utime，而 iter_files 只会按
+        文件字段全局排序。先获取文件，再读取文件所属目录的直接子目录元数据，
+        最后按目录树深度优先遍历，可避免同一媒体目录被文件时间打散
+        """
+        file_items = list(
+            iter_files(
+                client,
+                cid=cid,
+                order=order,
+                asc=asc,
+                with_path=with_path,
+                with_ancestors=True,
+                max_workers=max_workers,
+                cooldown=cooldown,
+                use_media_api=use_media_api,
+                app=app,
+                **request_kwargs,
+            )
+        )
+        if not file_items:
+            return iter(())
+
+        directory_parent_ids = {int(cid)}
+        for item in file_items:
+            ancestors = item.get("ancestors") or []
+            # iter_files 的 ancestors 最后一项是文件本身，其余才是目录节点
+            for ancestor in ancestors[:-1]:
+                parent_id = int(ancestor.get("parent_id") or 0)
+                if parent_id:
+                    directory_parent_ids.add(parent_id)
+            if not ancestors and item.get("parent_id"):
+                directory_parent_ids.add(int(item["parent_id"]))
+
+        children_by_parent: Dict[int, List[Tuple[int, int, str, Dict[str, Any]]]] = {}
+        sequence = 0
+
+        def append_child(parent_id: int, kind: str, item: Dict[str, Any]) -> None:
+            """
+            添加目录树节点并保留同时间节点的稳定顺序
+            """
+            nonlocal sequence
+            sequence += 1
+            timestamp = int(
+                item.get("user_utime")
+                or item.get("mtime")
+                or item.get("time")
+                or 0
+            )
+            children_by_parent.setdefault(parent_id, []).append(
+                (timestamp, sequence, kind, item)
+            )
+
+        for parent_id in sorted(directory_parent_ids):
+            for item in iterdir(
+                client,
+                cid=parent_id,
+                order=order,
+                asc=asc,
+                cur=1,
+                show_dir=1,
+                fc_mix=1,
+                max_workers=0,
+                cooldown=cooldown,
+                use_media_api=use_media_api,
+                app="web",
+                **request_kwargs,
+            ):
+                if item.get("is_dir"):
+                    append_child(int(item["parent_id"]), "dir", item)
+
+        for item in file_items:
+            append_child(int(item["parent_id"]), "file", item)
+
+        for children in children_by_parent.values():
+            children.sort(key=lambda entry: (entry[0], entry[1]))
+
+        ordered_files: List[Dict[str, Any]] = []
+        seen_directories = {int(cid)}
+        pending = [iter(children_by_parent.get(int(cid), []))]
+        while pending:
+            try:
+                _, _, kind, item = next(pending[-1])
+            except StopIteration:
+                pending.pop()
+                continue
+            if kind == "file":
+                ordered_files.append(item)
+                continue
+            directory_id = int(item["id"])
+            if directory_id in seen_directories:
+                continue
+            seen_directories.add(directory_id)
+            pending.append(iter(children_by_parent.get(directory_id, [])))
+
+        seen_file_ids = {int(item["id"]) for item in ordered_files}
+        remaining = [
+            item for item in file_items if int(item["id"]) not in seen_file_ids
+        ]
+        if remaining:
+            logger.warning(
+                "【全量STRM生成】目录树排序有 %s 个文件未能挂接父目录，追加到末尾",
+                len(remaining),
+            )
+            ordered_files.extend(remaining)
+        return iter(ordered_files)
+
     def __get_full_sync_iterator(self, parent_id: int):
         """
         获取全量同步的网盘遍历器和参数。
 
-        目录树模式按 115 的入库时间从旧到新读取，并由单 worker 顺序落盘。
-        Infuse/Plex 的“日期已添加”依据本地文件时间排序，因此让最新条目最后
-        写入，才能在日期倒序时显示新入库在前、旧入库在后。快速模式保留旧的
-        skim 遍历，明确不提供顺序保证。
+        目录树模式按 115 文件夹的修改时间从旧到新读取，并由单 worker 顺序落盘。
+        115 界面使用目录 user_utime 排序，文件自身的时间不能代表媒体目录顺序。
+        让最新目录最后写入，才能在日期倒序时显示新入库在前、旧入库在后。
+        快速模式保留旧的 skim 遍历，明确不提供顺序保证。
         """
         sync_mode = configer.get_config("full_sync_sync_mode")
         if sync_mode not in {"directory_tree", "fast"}:
@@ -148,12 +271,11 @@ class FullSyncStrmHelper:
             )
 
         if sync_mode == "directory_tree":
-            return iter_files, {
+            return self.__iter_files_by_directory_tree, {
                 "with_path": True,
-                "order": "user_ptime",
+                "order": "user_utime",
                 "asc": 1,
-                # iter_offset 文档明确说明并发分页可能乱序；严格模式必须
-                # 使用单 worker，保证 115 返回顺序传递到 STRM 写入队列。
+                # 目录级排序需要先构建目录树；文件分页和目录列表均保持单 worker
                 "max_workers": 0,
                 "cid": parent_id,
                 "with_ancestors": True,
