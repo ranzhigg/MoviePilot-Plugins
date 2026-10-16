@@ -67,7 +67,6 @@ def scan_repository(repository: Path) -> List[Dict[str, Any]]:
     targets = [
         "plugins.v3/p115strmhelper",
         "frontend/p115strmhelper",
-        "dev/p115strmhelper",
         "dev/prepare_plugin_deps.py",
         ".github/workflows/test-p115strmhelper.yml",
         ".github/workflows/rust_build_share_strm_scan.yml",

@@ -4,8 +4,6 @@ WebhookUtils 测试模块
 包含 WebhookUtils 相关方法的单元测试
 """
 
-from json import load
-from pathlib import Path
 from unittest import TestCase
 
 from utils.webhook import WebhookUtils
@@ -141,22 +139,17 @@ Some other information here"""
         ]
         self.assertEqual(result, expected)
 
-    def test_parse_with_real_json_data(self):
-        """使用真实的 webhook_delete.json 数据测试"""
-        json_file = (
-            Path(__file__).resolve().parent.parent.parent.parent
-            / "dev"
-            / "p115strmhelper"
-            / "webhook_delete.json"
-        )
+    def test_parse_realistic_delete_description(self):
+        """测试真实删除事件描述中的多条 STRM 路径"""
+        description = """Item Name:
+狂怒沙暴
 
-        if not json_file.exists():
-            self.skipTest(f"测试文件不存在: {json_file}")
+Item Path:
+/data2/test/狂怒沙暴 (2023)/狂怒沙暴 (2023) - 1080p.strm
+/data2/test/狂怒沙暴 (2023)/狂怒沙暴 (2023) - 720p.strm
 
-        with open(json_file, "r", encoding="utf-8") as f:
-            data = load(f)
-
-        description = data.get("Description", "")
+Mount Paths:
+http://example.com/redirect_url?pickcode=cg04ctinkn3aidbzc"""
         result = WebhookUtils.parse_item_paths_from_description(description)
 
         expected = [

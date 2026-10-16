@@ -9,6 +9,7 @@
 - [V3 插件](plugins.v3/p115strmhelper)：115 网盘 STRM 生成、同步、整理及相关媒体库联动。
 - [V2 插件](plugins.v2/p115strmhelper)：兼容 MoviePilot V2 的 115 网盘 STRM 助手。
 - [插件文档](docs/p115strmhelper/README.md)
+- [fork 与上游差异说明](docs/p115strmhelper/FORK_DIFF.md)
 
 ### STRM 逐条通知
 
@@ -17,8 +18,6 @@
 ## 配套资源
 
 - frontend/p115strmhelper：115 STRM 助手的远程组件构建产物与源码。
-- plex-mediainfo-helper：115 STRM 助手使用的媒体信息辅助服务。
-- dev/p115strmhelper、scripts/restore_p115strmhelper.*：115 STRM 助手的维护与恢复工具。
 
 ## 插件索引
 
