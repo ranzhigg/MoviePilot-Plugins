@@ -8,13 +8,13 @@ from pathlib import Path
 from os import makedirs
 from queue import Empty, Queue
 from secrets import token_hex
-from threading import Thread
+from threading import Lock, Thread
 from time import perf_counter, sleep
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from orjson import dumps
 from p115client import P115Client
-from p115client.tool.iterdir import iter_files, iter_files_skim, iterdir
+from p115client.tool.iterdir import iter_file_list, iter_files, iter_files_skim
 
 from app.sdk.config import settings
 from app.sdk.logging import logger
@@ -34,7 +34,13 @@ from ....utils.exception import (
 from ....utils.mediainfo_download import MediainfoDownloadMiddleware
 from ....utils.path import PathUtils, PathRemoveUtils
 from ....utils.sentry import sentry_manager
-from ....utils.strm import StrmUrlGetter, StrmGenerater
+from ....utils.strm import (
+    StrmUrlGetter,
+    StrmGenerater,
+    get_source_mtime,
+    set_path_mtime,
+    write_strm_file,
+)
 from ....utils.tree import DirectoryTree
 from ....utils.http import check_iter_path_data
 from ....utils.base64 import CBase64
@@ -119,6 +125,8 @@ class FullSyncStrmHelper:
 
         self.write_queue = Queue(maxsize=4096)
         self.result_queue = Queue()
+        self._ordered_directory_mtimes: Dict[str, float] = {}
+        self._ordered_directory_mtime_lock = Lock()
 
         self.local_tree_path = configer.PLUGIN_TEMP_PATH / "local_tree.txt"
         self.pan_tree_path = configer.PLUGIN_TEMP_PATH / "pan_tree.txt"
@@ -169,19 +177,35 @@ class FullSyncStrmHelper:
         if not file_items:
             return iter(())
 
-        directory_parent_ids = {int(cid)}
+        required_parent_ids = {int(cid)}
         for item in file_items:
             ancestors = item.get("ancestors") or []
             # iter_files 的 ancestors 最后一项是文件本身，其余才是目录节点
             for ancestor in ancestors[:-1]:
                 parent_id = int(ancestor.get("parent_id") or 0)
                 if parent_id:
-                    directory_parent_ids.add(parent_id)
+                    required_parent_ids.add(parent_id)
             if not ancestors and item.get("parent_id"):
-                directory_parent_ids.add(int(item["parent_id"]))
+                required_parent_ids.add(int(item["parent_id"]))
 
         children_by_parent: Dict[int, List[Tuple[int, int, str, Dict[str, Any]]]] = {}
+        directory_mtimes: Dict[int, Optional[float]] = {}
         sequence = 0
+
+        def get_item_timestamp(item: Dict[str, Any]) -> Optional[float]:
+            for key in ("user_utime", "user_ptime", "mtime", "time"):
+                value = item.get(key)
+                if value in (None, "", 0, "0"):
+                    continue
+                try:
+                    timestamp = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if timestamp > 100_000_000_000:
+                    timestamp /= 1000
+                if timestamp > 0:
+                    return timestamp
+            return None
 
         def append_child(parent_id: int, kind: str, item: Dict[str, Any]) -> None:
             """
@@ -189,25 +213,62 @@ class FullSyncStrmHelper:
             """
             nonlocal sequence
             sequence += 1
-            timestamp = int(
-                item.get("user_utime")
-                or item.get("mtime")
-                or item.get("time")
-                or 0
-            )
+            timestamp = int(get_item_timestamp(item) or 0)
             children_by_parent.setdefault(parent_id, []).append(
                 (timestamp, sequence, kind, item)
             )
 
-        for parent_id in sorted(directory_parent_ids):
-            for item in iterdir(
+        def annotate_order(item: Dict[str, Any]) -> Dict[str, Any]:
+            """把文件所在路径的所有祖先目录时间一并带到本地落盘阶段。"""
+            ordered_item = dict(item)
+            directory_mtime = directory_mtimes.get(
+                int(ordered_item.get("parent_id") or 0)
+            )
+            if directory_mtime is not None:
+                ordered_item["_p115_order_mtime"] = directory_mtime
+
+            relative_parts: List[str] = []
+            ordered_directories = []
+            for ancestor in (ordered_item.get("ancestors") or [])[:-1]:
+                ancestor_id = int(ancestor.get("id") or 0)
+                if ancestor_id == int(cid):
+                    continue
+                name = ancestor.get("name")
+                if not name:
+                    continue
+                relative_parts.append(str(name))
+                ancestor_mtime = directory_mtimes.get(ancestor_id)
+                if ancestor_mtime is not None:
+                    ordered_directories.append(
+                        ("/".join(relative_parts), ancestor_mtime)
+                    )
+            if ordered_directories:
+                ordered_item["_p115_order_dirs"] = ordered_directories
+            return ordered_item
+
+        queried_parent_ids: Set[int] = set()
+
+        def collect_directory_entries(parent_id: int, recursive: int) -> None:
+            if parent_id in queried_parent_ids:
+                return
+            queried_parent_ids.add(parent_id)
+            # iterdir() 只封装了当前目录接口，并没有公开 cur=0 参数。
+            # 这里使用 p115client 已有的 iter_file_list 原始 payload 接口：
+            # cur=0 拉取整棵目录树，cur=1 作为缺失父目录的兼容补拉。
+            payload = {
+                "cid": int(parent_id),
+                "cur": int(recursive),
+                "show_dir": 1,
+                "fc_mix": 1,
+                "o": order,
+                "asc": asc,
+                "type": 99,
+                "suffix": "",
+            }
+            for item in iter_file_list(
                 client,
-                cid=parent_id,
-                order=order,
-                asc=asc,
-                cur=1,
-                show_dir=1,
-                fc_mix=1,
+                payload=payload,
+                hold_top=False,
                 max_workers=0,
                 cooldown=cooldown,
                 use_media_api=use_media_api,
@@ -216,6 +277,13 @@ class FullSyncStrmHelper:
             ):
                 if item.get("is_dir"):
                     append_child(int(item["parent_id"]), "dir", item)
+                    directory_mtimes[int(item["id"])] = get_item_timestamp(item)
+
+        # p115client 的 iter_file_list(cur=0) 会递归读取目录树；若当前接口/
+        # 版本只返回部分目录，再按尚未拿到元数据的父目录补拉，兼顾请求量和兼容性。
+        collect_directory_entries(int(cid), 0)
+        for parent_id in sorted(required_parent_ids - queried_parent_ids):
+            collect_directory_entries(parent_id, 1)
 
         for item in file_items:
             append_child(int(item["parent_id"]), "file", item)
@@ -233,7 +301,7 @@ class FullSyncStrmHelper:
                 pending.pop()
                 continue
             if kind == "file":
-                ordered_files.append(item)
+                ordered_files.append(annotate_order(item))
                 continue
             directory_id = int(item["id"])
             if directory_id in seen_directories:
@@ -250,7 +318,8 @@ class FullSyncStrmHelper:
                 "【全量STRM生成】目录树排序有 %s 个文件未能挂接父目录，追加到末尾",
                 len(remaining),
             )
-            ordered_files.extend(remaining)
+            for item in remaining:
+                ordered_files.append(annotate_order(item))
         return iter(ordered_files)
 
     def __get_full_sync_iterator(self, parent_id: int):
@@ -479,6 +548,13 @@ class FullSyncStrmHelper:
         folders_list: List = []
 
         for item in batch:
+            db_extra = {
+                key: value
+                for key, value in item.items()
+                if not key.startswith("_p115_")
+            }
+            if item.get("_p115_order_mtime") not in (None, "", 0, "0"):
+                db_extra["_p115_order_mtime"] = item["_p115_order_mtime"]
             ancestors = item.get("ancestors", [])
             path_parts = []
             for ancestor in ancestors[1:-1]:
@@ -508,7 +584,7 @@ class FullSyncStrmHelper:
                         "ctime": item.get("ctime", 0),
                         "mtime": item.get("mtime", 0),
                         "path": item.get("path", ""),
-                        "extra": dumps(item).decode("utf-8") if item else None,
+                        "extra": dumps(db_extra).decode("utf-8") if item else None,
                     }
                 )
                 seen_file_ids.add(file_id)
@@ -527,7 +603,7 @@ class FullSyncStrmHelper:
         buffer_size = 64
 
         while True:
-            tasks: List[Tuple[Path, str, str]] = []
+            tasks: List[Tuple[Path, str, str, Optional[float]]] = []
             task_done_handled = False
             try:
                 first_task = self.write_queue.get()
@@ -557,14 +633,19 @@ class FullSyncStrmHelper:
                     for _ in tasks:
                         self.write_queue.task_done()
 
-    def __flush_write_buffer(self, tasks: List[Tuple[Path, str, str]]):
+    def __flush_write_buffer(
+        self, tasks: List[Tuple[Path, str, str, Optional[float]]]
+    ):
         """
         批量处理写入任务
         """
-        for new_file_path, strm_url, original_file_name in tasks:
+        for new_file_path, strm_url, original_file_name, source_mtime in tasks:
             try:
-                with open(new_file_path, "w", encoding="utf-8") as file:
-                    file.write(strm_url)
+                write_strm_file(
+                    new_file_path,
+                    strm_url,
+                    source_mtime=source_mtime,
+                )
 
                 self.result_queue.put(
                     ProcessResult(
@@ -578,8 +659,11 @@ class FullSyncStrmHelper:
             except FileNotFoundError:
                 try:
                     makedirs(new_file_path.parent, exist_ok=True)
-                    with open(new_file_path, "w", encoding="utf-8") as file:
-                        file.write(strm_url)
+                    write_strm_file(
+                        new_file_path,
+                        strm_url,
+                        source_mtime=source_mtime,
+                    )
 
                     self.result_queue.put(
                         ProcessResult(
@@ -623,6 +707,31 @@ class FullSyncStrmHelper:
                     )
                 )
 
+    def __register_ordered_directory(
+        self, directory: Path, source_mtime: Optional[float]
+    ) -> None:
+        """记录媒体目录时间，供全量写入完成后统一校正目录 mtime。"""
+        if source_mtime is None:
+            return
+        try:
+            timestamp = float(source_mtime)
+        except (TypeError, ValueError):
+            return
+        if timestamp <= 0:
+            return
+        with self._ordered_directory_mtime_lock:
+            self._ordered_directory_mtimes.setdefault(str(directory), timestamp)
+
+    def __apply_ordered_directory_mtimes(self) -> int:
+        """在所有 STRM 写入结束后恢复目录时间，避免写文件再次改变目录排序。"""
+        if self.__get_full_sync_generate_mode() != "ordered":
+            return 0
+        with self._ordered_directory_mtime_lock:
+            directory_mtimes = dict(self._ordered_directory_mtimes)
+        for directory, source_mtime in sorted(directory_mtimes.items()):
+            set_path_mtime(Path(directory), source_mtime)
+        return len(directory_mtimes)
+
     def __process_single_item(
         self,
         item: Dict,
@@ -654,6 +763,17 @@ class FullSyncStrmHelper:
             original_file_name = file_path.name
             file_name = StrmGenerater.get_strm_filename(file_path)
             new_file_path = file_target_dir / file_name
+            source_mtime = get_source_mtime(item)
+            if item.get("_p115_order_mtime") not in (None, "", 0, "0"):
+                self.__register_ordered_directory(file_target_dir, source_mtime)
+            for relative_dir, directory_mtime in item.get(
+                "_p115_order_dirs", []
+            ):
+                self.__register_ordered_directory(
+                    target_dir
+                    / PathUtils.sanitize_path_parts(Path(relative_dir)),
+                    directory_mtime,
+                )
         except FileItemKeyMiss as e:
             logger.error(
                 "【全量STRM生成】生成 STRM 文件失败: %s  %s",
@@ -808,6 +928,8 @@ class FullSyncStrmHelper:
 
             if new_file_path.exists():
                 if self.overwrite_mode == "never":
+                    if source_mtime is not None:
+                        set_path_mtime(new_file_path, source_mtime)
                     self.__base_logger(
                         "warn",
                         f"【全量STRM生成】{new_file_path} 已存在，覆盖模式 {self.overwrite_mode}，跳过此路径",
@@ -853,7 +975,12 @@ class FullSyncStrmHelper:
             strm_url = self.strmurlgetter.get_strm_url(
                 pickcode, original_file_name, item.get("path")
             )
-            write_task = (new_file_path, strm_url, original_file_name)
+            write_task = (
+                new_file_path,
+                strm_url,
+                original_file_name,
+                source_mtime,
+            )
             if enqueue_write:
                 self.write_queue.put(write_task)
 
@@ -959,10 +1086,16 @@ class FullSyncStrmHelper:
 
         :param full_sync_strm_paths (str): 全量同步路径配置字符串
         """
-        rust = configer.full_sync_process_rust
         media_paths = full_sync_strm_paths.split("\n")
 
         preserve_strm_order = self.__get_full_sync_generate_mode() == "ordered"
+        rust = bool(configer.full_sync_process_rust) and not preserve_strm_order
+        if configer.full_sync_process_rust and preserve_strm_order:
+            logger.warning(
+                "【全量STRM生成】有序模式已禁用 Rust 快速路径，避免 Rust 结果绕过 115 目录树顺序"
+            )
+        with self._ordered_directory_mtime_lock:
+            self._ordered_directory_mtimes.clear()
         num_io_workers = 1 if preserve_strm_order else 8
         io_threads = []
         for _ in range(num_io_workers):
@@ -1081,6 +1214,11 @@ class FullSyncStrmHelper:
                             )
 
                             if rust:
+                                source_mtime_by_path = {
+                                    item.get("path"): get_source_mtime(item)
+                                    for item in batch
+                                    if item.get("path")
+                                }
                                 input_batch = [
                                     {
                                         "name": item.get("name"),
@@ -1163,6 +1301,9 @@ class FullSyncStrmHelper:
                                             new_file_path,
                                             strm_url,
                                             strm_info.original_file_name,
+                                            source_mtime_by_path.get(
+                                                strm_info.path_in_pan
+                                            ),
                                         )
                                     )
 
@@ -1356,6 +1497,8 @@ class FullSyncStrmHelper:
             collector_thread.join()
             if local_tree_task_thread is not None:
                 local_tree_task_thread.join()
+
+        self.__apply_ordered_directory_mtimes()
 
         self.mediainfo_count, self.mediainfo_fail_count, self.mediainfo_fail_dict = (
             self.mediainfodownloader.batch_auto_downloader(

@@ -37,7 +37,7 @@ def _load_strm_write_helpers():
 
 
 class StrmWriteTest(TestCase):
-    def test_source_time_prefers_creation_and_accepts_milliseconds(self) -> None:
+    def test_source_time_prefers_order_time_and_accepts_milliseconds(self) -> None:
         get_source_mtime, _ = _load_strm_write_helpers()
         self.assertEqual(
             get_source_mtime({"ctime": 1700000000, "mtime": 1800000000}),
@@ -50,6 +50,21 @@ class StrmWriteTest(TestCase):
         self.assertEqual(
             get_source_mtime(SimpleNamespace(modify_time=1700000001)),
             1700000001,
+        )
+        self.assertEqual(
+            get_source_mtime(
+                {
+                    "extra": '{"_p115_order_mtime": 1700000002}',
+                    "ctime": 1900000000,
+                }
+            ),
+            1700000002,
+        )
+        self.assertEqual(
+            get_source_mtime(
+                {"user_utime": 1700000003, "ctime": 1900000004}
+            ),
+            1700000003,
         )
 
     def test_new_file_uses_source_time_and_repeated_write_is_noop(self) -> None:

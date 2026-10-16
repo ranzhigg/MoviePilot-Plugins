@@ -19,7 +19,12 @@ from ...utils.storage_item import (
     resolve_file_via_parent_list,
 )
 from ...utils.sentry import sentry_manager
-from ...utils.strm import StrmUrlGetter, StrmGenerater
+from ...utils.strm import (
+    StrmUrlGetter,
+    StrmGenerater,
+    get_source_mtime,
+    write_strm_file,
+)
 from ...utils.automaton import AutomatonUtils
 from ...utils.mediainfo_download import MediainfoDownloadMiddleware
 from ...utils.http import check_iter_path_data
@@ -722,8 +727,11 @@ class MonitorLife:
                             pickcode, original_file_name, item["path"]
                         )
 
-                        with open(new_file_path, "w", encoding="utf-8") as file:
-                            file.write(strm_url)
+                        write_strm_file(
+                            new_file_path,
+                            strm_url,
+                            source_mtime=get_source_mtime(item),
+                        )
                         logger.info(
                             "【监控生活事件】生成 STRM 文件成功: %s",
                             str(new_file_path),
@@ -882,8 +890,11 @@ class MonitorLife:
                     pickcode, original_file_name, file_path=file_path_string
                 )
 
-                with open(new_file_path, "w", encoding="utf-8") as file:
-                    file.write(strm_url)
+                write_strm_file(
+                    new_file_path,
+                    strm_url,
+                    source_mtime=get_source_mtime(event),
+                )
                 logger.info(
                     "【监控生活事件】生成 STRM 文件成功: %s", str(new_file_path)
                 )
@@ -1716,9 +1727,7 @@ class MonitorLife:
                 )
                 return False, False
             try:
-                strm_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(strm_path, "w", encoding="utf-8") as f:
-                    f.write(expected)
+                write_strm_file(strm_path, expected)
                 logger.info(
                     "【监控生活事件】%s STRM 已按事件创建: %s",
                     scene,
@@ -1751,8 +1760,7 @@ class MonitorLife:
             )
             return True, False
         try:
-            with open(strm_path, "w", encoding="utf-8") as f:
-                f.write(expected)
+            write_strm_file(strm_path, expected)
             logger.info(
                 "【监控生活事件】%s STRM 内容已按事件更新: %s",
                 scene,

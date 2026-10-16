@@ -224,13 +224,13 @@
                 <v-select v-model="config.full_sync_generate_mode" label="生成模式" :items="[
                   { title: '严格有序生成（推荐）', value: 'ordered' },
                   { title: '并发生成（速度优先）', value: 'parallel' }
-                ]" hint="严格有序模式按115旧到新顺序写入，最新内容最后落盘；Plex/Infuse按日期倒序时新内容在前" persistent-hint
+                ]" hint="严格有序模式按115旧到新顺序写入，并同步STRM与所有祖先目录的来源时间；Plex/Infuse按日期倒序时新内容在前" persistent-hint
                   density="compact"></v-select>
               </v-col>
             </v-row>
             <v-alert v-if="config.full_sync_sync_mode === 'directory_tree' && config.full_sync_generate_mode === 'ordered'"
               type="success" variant="tonal" density="compact" class="mb-4" icon="mdi-sort-calendar-descending">
-              当前为顺序保证模式：Plex 和 Infuse 默认按“日期已添加”倒序时会与 115 的新入库顺序一致。插件按 115 旧到新读取并由单 worker 顺序落盘，让最新内容最后获得最新文件时间。
+              当前为顺序保证模式：插件按 115 目录 user_utime 旧到新读取，校正 STRM 文件及系列/季度等祖先目录时间。请等全量生成完成后再扫描；新建 Plex 库或清理旧记录重扫时，Plex 与 Infuse 按“日期已添加”倒序才会与 115 的新入库顺序一致。
             </v-alert>
             <v-alert v-else type="warning" variant="tonal" density="compact" class="mb-4" icon="mdi-alert-outline">
               当前配置不会保证全量 STRM 的日期顺序。若要让 Plex/Infuse 与 115 保持“新在前、旧在后”，请使用“115目录树同步 + 严格有序生成”。
@@ -296,14 +296,14 @@
               </v-col>
               <v-col cols="12" md="6">
                 <v-select v-model="config.full_sync_mediaservers" label="媒体服务器" :items="mediaservers" multiple chips
-                  closable-chips :disabled="!config.full_sync_media_server_refresh_enabled" hint="全量同步完成后将刷新整个媒体库，请谨慎使用"
+                  closable-chips :disabled="!config.full_sync_media_server_refresh_enabled" hint="仅在全部 STRM 和目录时间校正完成后刷新整个媒体库；Plex 旧条目不会自动重置日期已添加"
                   persistent-hint></v-select>
               </v-col>
               <v-col v-if="config.full_sync_media_server_refresh_enabled" cols="12">
                 <v-alert type="warning" variant="tonal" density="compact" class="mt-3" icon="mdi-alert">
                   <div class="text-body-2 mb-1"><strong>重要警告</strong></div>
                   <div class="text-caption">
-                    启用此功能后，全量同步完成后将自动刷新整个媒体库。此操作会扫描所有媒体文件，可能导致媒体服务器负载增加，请确保您已了解此风险并自行承担相应责任。
+                    启用此功能后，插件会等待所有 STRM 与目录时间校正完成，再请求刷新整个媒体库。此操作会扫描所有媒体文件，可能导致媒体服务器负载增加；Plex 已存在的日期已添加记录仍需清理旧记录或重建库后才能按本次顺序重排。
                   </div>
                 </v-alert>
               </v-col>

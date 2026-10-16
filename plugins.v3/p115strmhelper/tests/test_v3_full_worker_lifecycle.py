@@ -5,7 +5,7 @@ from json import dumps as json_dumps
 from pathlib import Path
 from queue import Empty, Queue
 from tempfile import TemporaryDirectory
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from time import perf_counter
 from types import MethodType, SimpleNamespace
 from typing import Any, Dict, Generator, Iterator, List, Optional, Set, Tuple
@@ -50,14 +50,14 @@ class TestV3FullWorkerLifecycle(TestCase):
             Any=Any, Dict=Dict, List=List, Optional=Optional, Set=Set, Tuple=Tuple,
             Path=Path, Thread=self._thread, ThreadPoolExecutor=ThreadPoolExecutor,
             as_completed=as_completed, dumps=lambda item: json_dumps(item).encode(),
-            Queue=Queue, Empty=Empty, batched=batched, perf_counter=perf_counter,
+            Queue=Queue, Empty=Empty, Lock=Lock, batched=batched, perf_counter=perf_counter,
             configer=self.config, logger=MagicMock(), P115Client=object,
             MediaInfoDownloader=object, CBase64=MagicMock(),
             StrmExecHistoryManager=MagicMock(), sentry_manager=MagicMock(),
             get_pid_by_path=MagicMock(return_value=1),
             iter_files=MagicMock(return_value=iter(())),
             iter_files_skim=MagicMock(return_value=iter(())),
-            iterdir=MagicMock(return_value=iter(())),
+            iter_file_list=MagicMock(return_value=iter(())),
             ProcessResult=namedtuple(
                 "ProcessResult", ["status", "path", "message", "data", "path_entry"]
             ),
@@ -89,6 +89,8 @@ class TestV3FullWorkerLifecycle(TestCase):
         self.helper.mediaserver_helper = MagicMock(enabled=False)
         self.helper.write_queue = Queue()
         self.helper.result_queue = Queue()
+        self.helper._ordered_directory_mtimes = {}
+        self.helper._ordered_directory_mtime_lock = Lock()
         self.fixture.namespace["FullSyncStrmHelper"] = lambda **kwargs: self.helper
         self.fixture.namespace["configer"].get_config.side_effect = (
             lambda key: False if key == "notify" else f"{self.temporary.name}#/media"
@@ -178,10 +180,13 @@ class TestV3FullWorkerLifecycle(TestCase):
         }
         self.namespace["iter_files"].return_value = iter([old_file, new_file])
 
-        def fake_iterdir(_client: Any, cid: int, **_kwargs: Any) -> Iterator[Dict]:
+        def fake_iter_file_list(
+            _client: Any, payload: Dict[str, Any], **_kwargs: Any
+        ) -> Iterator[Dict]:
             """
-            返回测试目录的直接子目录
+            返回测试目录的目录节点；递归快照和缺失父目录补拉共享这个桩。
             """
+            cid = int(payload["cid"])
             if cid == 42:
                 return iter(
                     [
@@ -203,10 +208,84 @@ class TestV3FullWorkerLifecycle(TestCase):
                 )
             return iter(())
 
-        self.namespace["iterdir"].side_effect = fake_iterdir
+        self.namespace["iter_file_list"].side_effect = fake_iter_file_list
         ordered = list(iterator(object(), **kwargs))
         self.assertEqual([item["id"] for item in ordered], [2, 1])
-        self.assertEqual(self.namespace["iterdir"].call_args.kwargs["app"], "ios")
+        self.assertEqual(
+            [item["_p115_order_mtime"] for item in ordered],
+            [10, 20],
+        )
+        self.assertEqual(
+            [item["_p115_order_dirs"] for item in ordered],
+            [[("new", 10)], [("old", 20)]],
+        )
+        self.assertEqual(
+            self.namespace["iter_file_list"].call_args.kwargs["app"], "ios"
+        )
+        self.assertEqual(
+            self.namespace["iter_file_list"].call_args.kwargs["payload"]["cur"], 0
+        )
+
+    def test_nested_series_and_season_directories_keep_all_source_times(self) -> None:
+        """
+        系列/季度等多级目录不能只校正 STRM 所在目录，所有祖先目录都要保留 115 时间。
+        """
+        self.config.full_sync_order_by_user_ptime_desc = True
+        iterator, kwargs = self.helper._FullSyncStrmHelper__get_full_sync_iterator(42)
+        nested_file = {
+            "id": 3,
+            "parent_id": 110,
+            "name": "episode.mkv",
+            "path": "/root/series/season/episode.mkv",
+            "user_utime": 999,
+            "ancestors": [
+                {"id": 42, "parent_id": 0, "name": "root"},
+                {"id": 100, "parent_id": 42, "name": "series"},
+                {"id": 110, "parent_id": 100, "name": "season"},
+                {"id": 3, "parent_id": 110, "name": "episode.mkv"},
+            ],
+        }
+        self.namespace["iter_files"].return_value = iter([nested_file])
+
+        def fake_iter_file_list(
+            _client: Any, payload: Dict[str, Any], **_kwargs: Any
+        ) -> Iterator[Dict]:
+            cid = int(payload["cid"])
+            if cid == 42:
+                return iter(
+                    [
+                        {
+                            "id": 100,
+                            "parent_id": 42,
+                            "name": "series",
+                            "is_dir": True,
+                            "user_utime": 20,
+                        }
+                    ]
+                )
+            if cid == 100:
+                return iter(
+                    [
+                        {
+                            "id": 110,
+                            "parent_id": 100,
+                            "name": "season",
+                            "is_dir": True,
+                            "user_utime": 10,
+                        }
+                    ]
+                )
+            return iter(())
+
+        self.namespace["iter_file_list"].side_effect = fake_iter_file_list
+        ordered = list(iterator(object(), **kwargs))
+
+        self.assertEqual([item["id"] for item in ordered], [3])
+        self.assertEqual(ordered[0]["_p115_order_mtime"], 10)
+        self.assertEqual(
+            ordered[0]["_p115_order_dirs"],
+            [("series", 20), ("series/season", 10)],
+        )
 
     def _thread(self, *args: Any, **kwargs: Any) -> Thread:
         thread = Thread(*args, **kwargs)

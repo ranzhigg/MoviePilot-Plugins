@@ -96,6 +96,18 @@ def _load_helper(root: Path, backend: str) -> Tuple[type, Dict[str, Any]]:
     config.increment_sync_second_level_dir_scan = False
     config.increment_sync_remove_unless_strm = False
     data = {}
+
+    def write_strm_file(
+        path: Path,
+        content: str,
+        source_mtime: Optional[float] = None,
+    ) -> bool:
+        """为 AST 加载的增量助手提供最小的真实 STRM 写入替身。"""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return True
+
     namespace = {
         "Path": Path,
         "cycle": cycle,
@@ -109,6 +121,9 @@ def _load_helper(root: Path, backend: str) -> Tuple[type, Dict[str, Any]]:
         "sentry_manager": Mock(),
         "ItertreeInternalError": RuntimeError,
         "DirectoryTree": lambda path: _SharedTree(path, backend, data),
+        "get_source_mtime": lambda source: None,
+        "set_path_mtime": lambda path, source_mtime: False,
+        "write_strm_file": write_strm_file,
         **{
             name: Mock()
             for name in (

@@ -4,6 +4,7 @@ __all__ = [
     "StrmUrlGetter",
     "StrmGenerater",
     "get_source_mtime",
+    "set_path_mtime",
     "write_strm_file",
 ]
 
@@ -29,13 +30,32 @@ from ..schemas.size import CompareMinSize
 
 def get_source_mtime(source: Any) -> Optional[float]:
     """
-    获取源文件的稳定时间戳。
+    获取源文件或 115 媒体目录的稳定时间戳。
 
-    115 文件优先使用创建时间（ctime），这样新入库的文件在媒体服务器
-    中仍然保持“最后加入、最后显示”的语义；没有创建时间时回退到修改时间。
-    MoviePilot 的 FileItem 只有 ``modify_time``，也能通过同一入口处理。
+    全量目录树模式会把媒体目录的 ``user_utime`` 写入内部字段
+    ``_p115_order_mtime``。该字段优先于文件自身时间，保证 STRM 的日期
+    排序跟随 115 的目录排序，而不是被目录内某个文件的时间打散。
+    MoviePilot 的 FileItem 仍可通过 ``modify_time`` 作为最后回退值。
     """
-    keys = ("ctime", "create_time", "mtime", "modify_time")
+    if isinstance(source, dict) and source.get("extra"):
+        try:
+            extra = __import__("json").loads(source["extra"])
+            if isinstance(extra, dict):
+                source = {**extra, **source}
+        except (TypeError, ValueError):
+            pass
+
+    keys = (
+        "_p115_order_mtime",
+        "p115_order_mtime",
+        # 根媒体目录下没有可继承的父目录时间时，使用 115 自身的排序时间。
+        "user_utime",
+        "user_ptime",
+        "ctime",
+        "create_time",
+        "mtime",
+        "modify_time",
+    )
     for key in keys:
         if isinstance(source, dict):
             value = source.get(key)
@@ -53,6 +73,26 @@ def get_source_mtime(source: Any) -> Optional[float]:
         if timestamp > 0:
             return timestamp
     return None
+
+
+def set_path_mtime(path: Path, source_mtime: Optional[float]) -> bool:
+    """把文件或目录的修改时间校正为 115 来源时间。"""
+    if source_mtime is None:
+        return False
+    timestamp = get_source_mtime({"mtime": source_mtime})
+    if timestamp is None:
+        return False
+    try:
+        path = Path(path)
+        current_stat = path.stat()
+        expected_ns = int(timestamp * 1_000_000_000)
+        if current_stat.st_mtime_ns == expected_ns:
+            return False
+        os.utime(path, ns=(current_stat.st_atime_ns, expected_ns))
+        return True
+    except OSError as exc:
+        logger.debug("【STRM生成】同步文件夹时间失败，保留文件系统时间: %s", exc)
+        return False
 
 
 def write_strm_file(

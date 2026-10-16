@@ -45,7 +45,13 @@ from ...utils.math import MathUtils
 from ...utils.mediainfo_download import MediainfoDownloadMiddleware
 from ...utils.path import PathRemoveUtils, PathUtils
 from ...utils.sentry import sentry_manager
-from ...utils.strm import StrmGenerater, StrmUrlGetter
+from ...utils.strm import (
+    StrmGenerater,
+    StrmUrlGetter,
+    get_source_mtime,
+    set_path_mtime,
+    write_strm_file,
+)
 from ...utils.tree import DirectoryTree
 
 
@@ -404,6 +410,11 @@ class IncrementSyncStrmHelper:
                 return size
         return None
 
+    def __get_source_mtime(self, path: str) -> Optional[float]:
+        """从增量同步数据库读取 115 目录排序时间。"""
+        data = self.databasehelper.get_by_path(path=path)
+        return get_source_mtime(data) if data else None
+
     def __get_pickcode_sha1(self, path: str) -> Tuple[str, str]:
         """
         通过路径获取 pick_code, sha1
@@ -732,8 +743,14 @@ class IncrementSyncStrmHelper:
                 pickcode, pan_path_obj.name, pan_path
             )
 
-            with open(new_file_path, "w", encoding="utf-8") as file:
-                file.write(strm_url)
+            source_mtime = self.__get_source_mtime(pan_path)
+            write_strm_file(
+                new_file_path,
+                strm_url,
+                source_mtime=source_mtime,
+            )
+            if source_mtime is not None:
+                set_path_mtime(new_file_path.parent, source_mtime)
             self.strm_count += 1
             logger.info(
                 "【增量STRM生成】生成 STRM 文件成功: %s",

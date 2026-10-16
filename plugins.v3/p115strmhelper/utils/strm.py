@@ -3,10 +3,17 @@ __all__ = [
     "StrmFilenameTemplateResolver",
     "StrmUrlGetter",
     "StrmGenerater",
+    "get_source_mtime",
+    "set_path_mtime",
+    "write_strm_file",
 ]
 
 
+import os
+import stat
+import tempfile
 from pathlib import Path
+from time import time
 from typing import Optional, Dict, Any, Union
 from urllib.parse import quote
 
@@ -19,6 +26,149 @@ from jinja2.exceptions import TemplateError
 
 from ..core.config import configer
 from ..schemas.size import CompareMinSize
+
+
+def get_source_mtime(source: Any) -> Optional[float]:
+    """
+    获取源文件或 115 媒体目录的稳定时间戳。
+
+    全量目录树模式会把媒体目录的 ``user_utime`` 写入内部字段
+    ``_p115_order_mtime``。该字段优先于文件自身时间，保证 STRM 的日期
+    排序跟随 115 的目录排序，而不是被目录内某个文件的时间打散。
+    """
+    if isinstance(source, dict) and source.get("extra"):
+        try:
+            extra = __import__("json").loads(source["extra"])
+            if isinstance(extra, dict):
+                source = {**extra, **source}
+        except (TypeError, ValueError):
+            pass
+
+    keys = (
+        "_p115_order_mtime",
+        "p115_order_mtime",
+        # 根媒体目录下没有可继承的父目录时间时，使用 115 自身的排序时间。
+        "user_utime",
+        "user_ptime",
+        "ctime",
+        "create_time",
+        "mtime",
+        "modify_time",
+    )
+    for key in keys:
+        if isinstance(source, dict):
+            value = source.get(key)
+        else:
+            value = getattr(source, key, None)
+        if value in (None, "", 0, "0"):
+            continue
+        try:
+            timestamp = float(value)
+        except (TypeError, ValueError):
+            continue
+        if timestamp > 100_000_000_000:
+            timestamp /= 1000
+        if timestamp > 0:
+            return timestamp
+    return None
+
+
+def set_path_mtime(path: Path, source_mtime: Optional[float]) -> bool:
+    """把文件或目录的修改时间校正为 115 来源时间。"""
+    if source_mtime is None:
+        return False
+    timestamp = get_source_mtime({"mtime": source_mtime})
+    if timestamp is None:
+        return False
+    try:
+        path = Path(path)
+        current_stat = path.stat()
+        expected_ns = int(timestamp * 1_000_000_000)
+        if current_stat.st_mtime_ns == expected_ns:
+            return False
+        os.utime(path, ns=(current_stat.st_atime_ns, expected_ns))
+        return True
+    except OSError as exc:
+        logger.debug("【STRM生成】同步文件夹时间失败，保留文件系统时间: %s", exc)
+        return False
+
+
+def write_strm_file(
+    file_path: Path,
+    strm_url: str,
+    source_mtime: Optional[float] = None,
+) -> bool:
+    """
+    幂等、原子地写入 STRM，并同步 115 来源时间。
+
+    即使 STRM 内容没有变化，也会修复历史文件的本地时间；这正是全量
+    重跑后仍能保持 Plex/Infuse 日期排序稳定的关键。
+    """
+    path = Path(file_path)
+    content = str(strm_url)
+    old_stat = None
+    source_timestamp = (
+        get_source_mtime({"mtime": source_mtime})
+        if source_mtime is not None
+        else None
+    )
+
+    if path.is_file():
+        try:
+            if path.read_text(encoding="utf-8") == content:
+                if source_timestamp is None:
+                    return False
+                current_stat = path.stat()
+                if current_stat.st_mtime_ns == int(source_timestamp * 1_000_000_000):
+                    return False
+                return set_path_mtime(path, source_timestamp)
+            old_stat = path.stat()
+        except OSError:
+            old_stat = None
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        fd, temporary_path = tempfile.mkstemp(
+            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as temporary_file:
+            temporary_file.write(content)
+
+        mode = (
+            stat.S_IMODE(old_stat.st_mode)
+            if old_stat is not None
+            else stat.S_IMODE(path.parent.stat().st_mode) & 0o666
+        ) or 0o644
+        os.chmod(temporary_path, mode)
+        os.replace(temporary_path, path)
+        temporary_path = None
+
+        if source_timestamp is not None:
+            atime_ns = (
+                old_stat.st_atime_ns
+                if old_stat is not None
+                else int(time() * 1_000_000_000)
+            )
+            try:
+                os.utime(
+                    path,
+                    ns=(atime_ns, int(source_timestamp * 1_000_000_000)),
+                )
+            except OSError as exc:
+                logger.debug("【STRM生成】同步文件时间失败，保留文件系统时间: %s", exc)
+        elif old_stat is not None:
+            try:
+                os.utime(path, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
+            except OSError as exc:
+                logger.debug("【STRM生成】保留旧文件时间失败: %s", exc)
+        return True
+    finally:
+        if temporary_path:
+            try:
+                os.unlink(temporary_path)
+            except FileNotFoundError:
+                pass
 
 
 class StrmUrlTemplateResolver:
