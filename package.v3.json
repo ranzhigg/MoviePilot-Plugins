@@ -3,7 +3,7 @@
         "name": "115网盘STRM助手",
         "description": "115网盘STRM生成一条龙服务",
         "labels": "云盘",
-        "version": "3.0.10",
+        "version": "3.0.11",
         "icon": "https://raw.githubusercontent.com/jxxghp/MoviePilot-Frontend/refs/heads/v2/src/assets/images/misc/u115.png",
         "author": "DDSRem",
         "release": true,
@@ -11,6 +11,7 @@
         "v3t": false,
         "level": 1,
         "history": {
+            "v3.0.11": "选择性同步上游媒体库通知改进：Emby 文件发现通知优先、跨平台远端路径校验、等待发现可中断；兼容宿主无 batch 参数；保留本 fork 的 115 目录树顺序契约",
             "v3.0.10": "确认全量顺序以 115 上传完成后稳定的 user_utime 为准，补充 user_utime 优先于 user_ptime 的回归保护；保持目录树有序生成、STRM/祖先目录时间校正和 Plex/Infuse 日期倒序契约",
             "v3.0.9": "深度修复 115 目录树排序：按目录 user_utime 递归生成，STRM 文件及所有祖先媒体目录同步源时间；重复全量和 overwrite=never 也会校正历史时间，有序模式自动绕过 Rust 快速路径",
             "v3.0.8": "清理已移除的 Plex App 媒体补全、独立 Helper、孤立前端组件和恢复脚本，收紧仓库内容",
