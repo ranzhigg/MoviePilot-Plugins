@@ -1,57 +1,32 @@
 # MoviePilot-Plugins
 
-> [!NOTE]
-> MoviePilot 第三方插件仓库
+> MoviePilot 第三方插件仓库，仅维护本人使用的插件。
 
-Telegram 交流群: https://t.me/+1lcscM_EbqhkN2Rl
+## 保留插件
 
-## 插件列表
+### 115 网盘 STRM 助手
 
-#### 探索类插件
+- [V3 插件](plugins.v3/p115strmhelper)：115 网盘 STRM 生成、同步、整理及相关媒体库联动。
+- [V2 插件](plugins.v2/p115strmhelper)：兼容 MoviePilot V2 的 115 网盘 STRM 助手。
+- [插件文档](docs/p115strmhelper/README.md)
 
-- [CCTV探索 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/cctvdiscover) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/cctvdiscover)：让探索支持CCTV的数据浏览。
-- [咪咕视频探索 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/migudiscover) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/migudiscover)：让探索支持咪咕视频的数据浏览。
-- [哔哩哔哩探索 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/bilibilidiscover) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/bilibilidiscover)：让探索支持哔哩哔哩的数据浏览。
-- [Bangumi每日放送探索 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/bangumidailydiscover) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/bangumidailydiscover)：让探索支持Bangumi每日放送的数据浏览。
-- [芒果TV探索 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/mangguodiscover) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/mangguodiscover)：让探索支持芒果TV的数据浏览。
-- [腾讯视频探索 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/tencentvideodiscover) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/tencentvideodiscover)：让探索支持腾讯视频的数据浏览。
+### STRM 逐条通知
 
-#### 网盘类插件
+- [V3 插件](plugins.v3/strmnotify)：监控新增 STRM，等待 NFO/封面就绪后逐条发送媒体通知，支持持久化去重。
 
-- [115网盘储存 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/p115disk) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/p115disk)：更快更强的115网盘储存模块。
-- [115网盘STRM助手 V3](plugins.v3/p115strmhelper) / [V2](docs/p115strmhelper/README.md)：115网盘STRM生成一条龙服务；V3 跟进 MoviePilot V3 宿主，V2 保留 Plex App 播放媒体信息补全，并支持通过 ffprobe 探测 STRM 实际媒体流后写入 Plex MediaInfo Helper。
-- [123云盘储存 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/p123disk) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/p123disk)：使存储支持123云盘。
-- [123云盘STRM助手 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/p123strmhelper) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/p123strmhelper)：123云盘STRM生成一条龙服务。
-- [CloudDrive2储存 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/clouddrivedisk) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/clouddrivedisk)：使存储支持 CloudDrive2，grpc 原生 API 操作。
-- [Emby 302 反向代理 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/embyreverseproxy) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/embyreverseproxy)：Emby 302 反向代理，自动代理 HTTP 链接，跳转最终地址，支持外部播放器调用。
-- [MediaWarp](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/mediawarp)：EmbyServer/Jellyfin 中间件：优化播放 Strm 文件、自定义前端样式、自定义允许访问客户端、嵌入脚本。
+## 配套资源
 
-#### 媒体管理类
+- frontend/p115strmhelper：115 STRM 助手的远程组件构建产物与源码。
+- plex-mediainfo-helper：115 STRM 助手使用的媒体信息辅助服务。
+- dev/p115strmhelper、scripts/restore_p115strmhelper.*：115 STRM 助手的维护与恢复工具。
 
-- [Agent影视助手](plugins.v2/agentresourceofficer)：飞书入口、资源搜索与转存助手；本 fork 优先使用 MP 官方分词接口，详见[修改说明](plugins.v2/agentresourceofficer/FORK_CHANGES.md)。
+## 插件索引
 
-- [STRM逐条通知 V3](https://github.com/ranzhigg/MoviePilot-Plugins/tree/main/plugins.v3/strmnotify)：监控新增 STRM，等待 NFO 就绪后逐条发送媒体通知，支持启用开关、监控目录、扫描间隔、通知渠道及展示字段设置，首次扫描不补发历史文件。
-- [神医媒体文件同步删除 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/samediasyncdel) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/samediasyncdel)：通过神医插件通知同步删除历史记录、源文件和下载任务。
-- [ffprobe命名补充 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/ffprobenamingsupplement) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/ffprobenamingsupplement)：整理重命名时调用 `ffprobe`，统一补全视频及关联字幕、音轨的 `videoFormat`、`videoCodec`、`videoBit`、`audioCodec`、`fps`、`effect`，支持 STRM
+- package.v2.json：MoviePilot V2 插件索引。
+- package.v3.json：MoviePilot V3 插件索引。
 
-#### 工具类
-
-- [115订阅站点修复 V3](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v3/p115subfixer) / [V2](https://github.com/DDSRem-Dev/MoviePilot-Plugins/tree/main/plugins.v2/p115subfixer)：修复115网盘订阅追更插件导致的订阅站点被篡改问题，并自动卸载该插件
-
-## 运维脚本
-
-- 115 广告附件清理已集成到 115网盘STRM助手的「系统配置 → 高级配置」：保存目录和关键词后可预览或全目录清理，仅处理 TXT/HTML/HTM/URL 附件，支持限速、停止和任务统计；明细见插件日志，无需独立脚本。
-
-- [可选 jieba 依赖恢复](docs/optional-jieba.md)：检测 Agent影视助手的分词依赖，缺失时安装，支持接入已有恢复脚本。
-
-## 感谢
-
-- [p115client](https://github.com/ChenyangGao/p115client)
-- [p123client](https://github.com/ChenyangGao/p123client)
-- [MediaWarp](https://github.com/Akimio521/MediaWarp)
-
-<a href="https://github.com/DDSRem-Dev/MoviePilot-Plugins/graphs/contributors"><img src="https://contrib.rocks/image?repo=DDSRem-Dev/MoviePilot-Plugins"></a>
+MoviePilot 插件市场支持通过 PLUGIN_MARKET 添加本仓库；仓库仅支持 GitHub main 分支。
 
 ## 许可证
 
-此仓库内所有项目根据 GNU General Public License v3.0 许可证进行许可，详见[`LICENSE`](LICENSE) 文件。
+此仓库内项目根据 GNU General Public License v3.0 许可证进行许可，详见 [LICENSE](LICENSE)。

@@ -1,2 +1,0 @@
-p123client @ https://github.com/jdzjy/p123client/archive/refs/heads/main.zip
-httpx[http2]
