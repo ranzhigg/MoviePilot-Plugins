@@ -183,7 +183,7 @@ class FullSyncStrmHelper:
         app: str = "ios",
         **request_kwargs: Any,
     ):
-        """按 115 目录树的文件夹 user_utime 顺序返回文件。"""
+        """按 115 上传完成后稳定的文件夹 user_utime 顺序返回文件。"""
         file_items = list(
             iter_files(
                 client,

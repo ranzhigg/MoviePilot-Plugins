@@ -217,7 +217,7 @@
                 <v-select v-model="config.full_sync_sync_mode" label="同步模式" :items="[
                   { title: '115目录树同步（推荐）', value: 'directory_tree' },
                   { title: '快速兼容模式（不保证顺序）', value: 'fast' }
-                ]" hint="目录树模式按115入库时间递归读取，保证媒体库排序依据稳定" persistent-hint
+                ]" hint="目录树模式按115上传完成后稳定的修改时间递归读取，保证媒体库排序依据稳定" persistent-hint
                   density="compact"></v-select>
               </v-col>
               <v-col cols="12" md="6">
@@ -230,7 +230,7 @@
             </v-row>
             <v-alert v-if="config.full_sync_sync_mode === 'directory_tree' && config.full_sync_generate_mode === 'ordered'"
               type="success" variant="tonal" density="compact" class="mb-4" icon="mdi-sort-calendar-descending">
-              当前为顺序保证模式：插件按 115 目录 user_utime 旧到新读取，校正 STRM 文件及系列/季度等祖先目录时间。请等全量生成完成后再扫描；新建 Plex 库或清理旧记录重扫时，Plex 与 Infuse 按“日期已添加”倒序才会与 115 的新入库顺序一致。
+              当前为顺序保证模式：插件按 115 上传完成后稳定的目录 user_utime 旧到新读取，校正 STRM 文件及系列/季度等祖先目录时间。请等全量生成完成后再扫描；新建 Plex 库或清理旧记录重扫时，Plex 与 Infuse 按“日期已添加”倒序才会与 115 的新入库顺序一致。
             </v-alert>
             <v-alert v-else type="warning" variant="tonal" density="compact" class="mb-4" icon="mdi-alert-outline">
               当前配置不会保证全量 STRM 的日期顺序。若要让 Plex/Infuse 与 115 保持“新在前、旧在后”，请使用“115目录树同步 + 严格有序生成”。

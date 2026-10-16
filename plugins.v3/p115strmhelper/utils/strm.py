@@ -32,9 +32,10 @@ def get_source_mtime(source: Any) -> Optional[float]:
     """
     获取源文件或 115 媒体目录的稳定时间戳。
 
-    全量目录树模式会把媒体目录的 ``user_utime`` 写入内部字段
-    ``_p115_order_mtime``。该字段优先于文件自身时间，保证 STRM 的日期
-    排序跟随 115 的目录排序，而不是被目录内某个文件的时间打散。
+    全量目录树模式会把媒体目录上传完成后稳定的 ``user_utime`` 写入内部字段
+    ``_p115_order_mtime``。该字段优先于文件自身时间，保证 STRM 的日期排序
+    跟随 115 的目录排序，而不是被目录内某个文件的时间打散。``user_ptime``
+    只是创建时间，不作为本 fork 的默认入库顺序依据。
     """
     if isinstance(source, dict) and source.get("extra"):
         try:

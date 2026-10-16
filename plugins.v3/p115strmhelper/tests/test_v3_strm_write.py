@@ -61,7 +61,11 @@ class V3StrmWriteTest(TestCase):
         )
         self.assertEqual(
             get_source_mtime(
-                {"user_utime": 1700000002, "ctime": 1900000003}
+                {
+                    "user_utime": 1700000002,
+                    "user_ptime": 1900000001,
+                    "ctime": 1900000003,
+                }
             ),
             1700000002,
         )

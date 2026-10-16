@@ -523,7 +523,7 @@ class ConfigManager(BaseModel):
     )
     full_sync_sync_mode: Literal["directory_tree", "fast"] = Field(
         default="directory_tree",
-        description="全量同步遍历模式：按115目录树修改时间顺序同步，或兼容快速模式",
+        description="全量同步遍历模式：按115上传完成后稳定的目录修改时间顺序同步，或兼容快速模式",
     )
     full_sync_generate_mode: Literal["ordered", "parallel"] = Field(
         default="ordered",
@@ -543,7 +543,7 @@ class ConfigManager(BaseModel):
     )
     full_sync_order_by_user_ptime_desc: bool = Field(
         default=True,
-        description="兼容旧配置：按115目录修改时间从旧到新遍历并顺序落盘，让最新目录最后获得本地修改时间，使Plex/Infuse默认日期倒序显示新入库在前",
+        description="兼容旧配置：按115上传完成后稳定的目录修改时间从旧到新遍历并顺序落盘，让最新目录最后获得本地修改时间，使Plex/Infuse默认日期倒序显示新入库在前",
     )
     full_sync_process_rust: bool = Field(
         default=False, description="全量同步处理数据使用 rust 模块"
